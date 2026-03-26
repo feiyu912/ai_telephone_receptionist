@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # --- Twilio ---
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
+    twilio_api_key_sid: str = ""
+    twilio_api_key_secret: str = ""
+    twilio_twiml_app_sid: str = ""
 
     # --- Cartesia (STT + TTS) ---
     cartesia_api_key: str = ""

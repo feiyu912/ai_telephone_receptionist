@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db.client import shutdown_db
-from app.routes import voice, websocket
+from app.routes import voice, websocket, token
 
 settings = get_settings()
 
@@ -48,6 +48,7 @@ app.add_middleware(
 
 app.include_router(voice.router)
 app.include_router(websocket.router)
+app.include_router(token.router)
 
 
 @app.get("/health")

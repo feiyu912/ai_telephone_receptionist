@@ -3,6 +3,16 @@
 .env.local
 .env.production
 
+# n8n workflows (contain credential references)
+workflows/
+
+# Supabase schema exports (local reference only)
+supabase tables/
+
+# Reference docs (local only, binary)
+docs/*.docx
+prompt.docx
+
 # Python
 __pycache__/
 *.py[cod]
