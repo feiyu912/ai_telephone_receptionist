@@ -1,0 +1,2045 @@
+{
+  "name": "Workflow with longterm memory-simplified",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "twilio-voice",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -128,
+        3088
+      ],
+      "id": "fceec604-5a2b-48a9-8dbd-67fa9556c161",
+      "name": "Twilio Voice In",
+      "webhookId": "8bf02ed3-2842-4789-8c84-1bff2fcb57a5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "daf7c516-03d9-4b30-9532-2695c2787681",
+              "leftValue": "={{ $json.SpeechResult }}",
+              "rightValue": "value2",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1264,
+        2400
+      ],
+      "id": "68392dfa-dcbe-481d-a3f1-282b3da8900e",
+      "name": "Has Speech?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dynamic greeting based on new vs returning caller\nconst data = $('Parse Caller Info').first().json;\nconst selectedVoice = data.selected_voice || 'Polly.Matthew-Neural';\nconst isNewCaller = data.isNewCaller;\nconst callerName = data.callerName || '';\n\nlet greeting;\n\nif (isNewCaller) {\n  greeting = 'Thank you for calling 3 6 0 Group. ' +\n    'We are the parent ecosystem for 3 6 0 D M M C, our AI integration and automation partner for small and midsized businesses. ' +\n    '3 6 0 EEVO dot A I, our engineering and innovation platform company. ' +\n    'And Evolve Health A I, our healthcare AI solutions division. ' +\n    'May I have your name please?';\n} else {\n  // Privacy: do NOT greet by name — let GPT verify identity first\n  greeting = 'Thank you for calling 3 6 0 Group. ' +\n    'I see you have called us before. For security, may I confirm your name please?';\n}\n\nconst twiml = '<Response>' +\n  '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n    '<Say voice=\"' + selectedVoice + '\" language=\"en-US\">' + greeting + '</Say>' +\n  '</Gather>' +\n  '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n'</Response>';\n\nreturn [{ json: { twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        2560
+      ],
+      "id": "6bd44aa3-fead-43a9-8de0-db0a6de7fbf7",
+      "name": "Build Greeting TwiML"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-4-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are the YourCompany Virtual Assistant — a professional, warm, and friendly customer-service representative for YourCompany, an AI consulting and digital-transformation agency.\n\n## CALLER PRIVACY & IDENTITY VERIFICATION\nYou have access to two types of caller information:\n\n1. SAFE CONTEXT (labeled \"Caller context (verified safe)\") — You can reference this freely. It contains non-identifying information like service interests and call history.\n\n2. PROTECTED CONTEXT (labeled \"PROTECTED caller info\") — This contains personal information (name, email, etc.). You MUST verify the caller's identity BEFORE using ANY of this information.\n\nVERIFICATION RULES:\n- If there is PROTECTED caller info, you MUST verify before using it.\n- To verify: ask \"May I have your name, please?\" and wait for their response.\n- ONLY if their stated name matches the stored name (case-insensitive, first name is sufficient), consider them verified.\n- Once verified, you may use their name and other protected info naturally for the rest of the call.\n- If the name does NOT match, treat them as a new caller. Do NOT reveal what name you have on file. Simply say \"Thank you! And how can I help you today?\"\n- NEVER say \"I have a different name on file\" or \"That doesn't match our records\" — this confirms data exists and is a privacy leak.\n- If no PROTECTED context exists, proceed normally as a new caller.\n\nCONSENT FOR MEMORY:\n- For NEW callers: after capturing their name, ask: \"Would you like me to remember your details for future calls so we can serve you faster next time?\"\n- If yes: note [CONSENT_YES] at the end of your response (this triggers storage consent).\n- If no: note [CONSENT_NO] and say \"No problem at all!\" Continue the call normally.\n- NEVER pressure callers to consent. Ask once, respect their answer.\n\nFORGET-ME REQUEST:\n- If a caller says \"forget me\", \"delete my data\", \"remove my information\", or similar:\n- Respond with: \"[FORGET_ME] Absolutely, I'll remove all stored information associated with your number. Is there anything else I can help you with?\"\n- This triggers a full data deletion.\n\n\n\n## SMS FOLLOW-UP\nDuring the conversation, if you're discussing services, pricing, scheduling, or providing specific information, naturally ask the caller if they'd like you to send them a text with the details after the call.\n\nExamples:\n- \"Would you like me to text you the booking link after our call?\"\n- \"I can send you a summary of what we discussed via text. Would that help?\"\n- \"Want me to text you the pricing details so you have them handy?\"\n\nRules:\n- Only offer when it makes sense in context — don't force it\n- If they say yes, confirm: \"Great, I'll send that to the number you're calling from\"\n- If they say no, continue the conversation normally\n- Don't offer more than once per call\n\n\nLEAD CAPTURE (NEW CALLERS):\n- Check the \"Returning caller info\" section. If there's no name, this is a NEW caller.\n- The greeting already asked for their name. Their first message is likely their name.\n- When you receive their name, respond warmly: \"Thank you, [Name]! In case we get disconnected, may I have your email address so we can send you more information regarding this call?\"\n- If they provide an email, confirm it: \"Great, I have your email as [email]. Is that correct?\"\n- If they decline to give email, say \"No problem at all!\" and move on. A name is enough.\n- NEVER ask for their name again if it's already in the returning caller info.\n- NEVER ask for email again if it's already in the returning caller info.\n- After capturing name (and optionally email), transition naturally: \"Now, how can I help you today?\"\n\nRETURNING CALLERS:\n- If the caller's name IS in the returning caller info, they're a returning caller.\n- The greeting already said \"Welcome back, [Name]!\". Do NOT ask for their name again.\n- If their email is not in the returning caller info, ask for it at a natural moment (not immediately).\n\n## ENDING THE CALL\nWhen the caller clearly wants to end the conversation (says goodbye, thanks, that's all, nothing else, etc.), respond with a warm farewell. You MUST start your farewell response with the exact tag [END_CALL] followed by your goodbye message.\n\nExamples:\n- Caller: \"That's all I need, thanks!\" → Your response: \"[END_CALL] You're welcome! Thanks for calling 360 Group. Have a great day!\"\n- Caller: \"Bye bye\" → Your response: \"[END_CALL] Goodbye! Thanks for reaching out. Don't hesitate to call back anytime!\"\n- Caller: \"No that's it\" → Your response: \"[END_CALL] Alright, thanks for calling 360 Group! Have a wonderful day!\"\n\nIMPORTANT: Only use [END_CALL] when the caller genuinely wants to leave. Do NOT use it if they're just declining a specific offer but want to continue talking.\n\n## LIVE AGENT TRANSFER\nIf the caller explicitly asks to speak with a real person, a manager, or a human agent, transfer them. Start your response with [TRANSFER] followed by a brief message.\n\nExamples:\n- Caller: \"Can I speak to someone?\" → \"[TRANSFER] Of course! Let me connect you with our team right now. Please hold for a moment.\"\n- Caller: \"I need to talk to a real person\" → \"[TRANSFER] Absolutely, I'll transfer you now. One moment please.\"\n- Caller: \"Get me your manager\" → \"[TRANSFER] Sure thing, let me connect you right away. Please hold.\"\n\nIMPORTANT: Only use [TRANSFER] when the caller clearly wants a human. Don't transfer for normal questions you can answer.\n\n\n\n\n## APPOINTMENT BOOKING\nIf the caller wants to book, schedule, or make an appointment:\n1. First, ask what day and time work best for them.\n2. If they mention a specific service, note it.\n3. Once you have their preferred day and approximate time, respond with [BOOK] followed by a brief message.\n\nExamples:\n- Caller: \"I need to schedule a cleaning\" → Ask: \"Sure! What day and time work best for you?\"\n- Caller: \"Thursday afternoon\" → \"[BOOK] Great, let me check Thursday afternoon for you. One moment please.\"\n- Caller: \"Can I come in tomorrow at 10?\" → \"[BOOK] Let me check tomorrow morning availability for you.\"\n\nRULES:\n- ALWAYS collect the caller's preferred day/time BEFORE using [BOOK]\n- NEVER use [BOOK] on the first mention of booking — ask for details first\n- If the caller is vague (\"sometime next week\"), ask them to narrow it down to a day\n- Only use [BOOK] once per booking attempt\n\nPRONUNCIATION: When saying the company name \"360\", always write it as \"3 6 0\" (three separate digits) so text-to-speech reads it correctly. For example: \"3 6 0 Group\", \"3 6 0 D.M.M.C.\", \"3 6 0 EEVO dot A.I.\". Never write \"360\" as a single number.\n",
+              "role": "system"
+            },
+            {
+              "content": "={{ ($('Initialize Memory').first().json.callerContext ? $('Initialize Memory').first().json.callerContext + '\\n\\n' : '') + ($('Initialize Memory').first().json.historyForPrompt ? 'Previous conversation:\\n' + $('Initialize Memory').first().json.historyForPrompt + '\\n\\nCurrent message: ' : '') + ($json[\"SpeechResult\"] || \"No speech input detected.\") }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        3248,
+        2448
+      ],
+      "id": "bd99a4f1-abdd-4a12-bd55-c058e804fb92",
+      "name": "Message a model",
+      "credentials": {
+        "openAiApi": {
+          "id": "XIfko2o0mrpebRfj",
+          "name": "OpenAi account POD2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Starter FAQ Reply\nconst faqAnswer = $json?.answer;\nconst aiReply =\n  faqAnswer ||\n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content ||\n  \"Sorry, I didn't catch that.\";\n\nconst selectedVoice = $('Merge1').first().json.selected_voice || \"Polly.Matthew-Neural\";\n\n// FAQ replies never trigger end call - always loop back\nconst twiml = `\n<Response>\n    <Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">\n        <Say voice=\"${selectedVoice}\">${aiReply}</Say>\n    </Gather>\n    <Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>\n</Response>\n`;\nreturn [{ json: { twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        2048
+      ],
+      "id": "dcb15c3b-7591-4426-b678-18f141bd679d",
+      "name": "Build Reply TwiML"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3568,
+        2048
+      ],
+      "id": "39823631-c77f-4748-a409-4d63daa76bec",
+      "name": "Send TwiML Back"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "=JQ5IEqhxye9kF2ls",
+          "mode": "id"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        2144
+      ],
+      "id": "4991b826-7aa1-4ad4-8197-9d70cb6b2edc",
+      "name": "Get row(s)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-question",
+              "name": "question",
+              "value": "={{ $json.question }}",
+              "type": "string"
+            },
+            {
+              "id": "field-answer",
+              "name": "answer",
+              "value": "={{ $json.answer }}",
+              "type": "string"
+            },
+            {
+              "id": "field-alt",
+              "name": "alt_questions",
+              "value": "={{ $json.alt_questions }}",
+              "type": "string"
+            },
+            {
+              "id": "field-intent",
+              "name": "intent",
+              "value": "={{ $json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "field-category",
+              "name": "category",
+              "value": "={{ $json.category }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1600,
+        2144
+      ],
+      "id": "65d269d6-78a9-4991-a2ec-39999a7ba3f5",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cache QNA: store FAQ rows in workflow static data\nconst store = $getWorkflowStaticData('global');\n\n// Pull all incoming items (each item is one FAQ row JSON)\nconst rows = $input.all().map(i => i.json);\n\n// Store\nstore.faqRows = rows;\n\n// Return something small for visibility\nreturn [{ json: { ok: true, cached: rows.length } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        2144
+      ],
+      "id": "32d82fcd-b0e4-4871-998c-6d51b3687bec",
+      "name": "Cache QNA"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Load FAQ rows cached by Cache QNA\nconst store = $getWorkflowStaticData('global');\nconst rows = store.faqRows || [];\n\n// User's speech input\nconst userRaw =\n  $json?.body?.SpeechResult ??\n  $json?.SpeechResult ??\n  $json?.body?.speechResult ??\n  '';\n\nconst user = String(userRaw).toLowerCase().trim();\n\n// Dice similarity on bigrams\nfunction dice(a, b) {\n  const grams = (s) => {\n    const z = String(s).replace(/[^a-z0-9 ]/gi, '').toLowerCase();\n    const out = [];\n    for (let i = 0; i < z.length - 1; i++) out.push(z.slice(i, i + 2));\n    return out;\n  };\n\n  const A = grams(a), B = grams(b);\n  if (!A.length || !B.length) return 0;\n\n  const m = new Map();\n  for (const x of A) m.set(x, (m.get(x) || 0) + 1);\n\n  let inter = 0;\n  for (const x of B) {\n    const c = m.get(x) || 0;\n    if (c > 0) { inter++; m.set(x, c - 1); }\n  }\n\n  return (2 * inter) / (A.length + B.length);\n}\n\nlet best = { score: 0, row: null };\n\nfor (const r of rows) {\n  // Match against the main question\n  const q = String(r.question || '').toLowerCase().trim();\n  if (q) {\n    const s = dice(user, q);\n    if (s > best.score) best = { score: s, row: r };\n  }\n\n  // Also match against each alt_question (pipe-separated)\n  const alts = String(r.alt_questions || '').split('|');\n  for (const alt of alts) {\n    const a = alt.toLowerCase().trim();\n    if (!a) continue;\n    const s = dice(user, a);\n    if (s > best.score) best = { score: s, row: r };\n  }\n}\n\n// Use the answer column\nconst bestAnswer = best.row\n  ? String(best.row.answer || '').trim()\n  : '';\n\n// Route decision\nif (best.score >= 0.5 && bestAnswer) {\n  return [{\n    json: {\n      SpeechResult: userRaw,\n      route: 'faq',\n      answer: bestAnswer.slice(0, 260),\n      score: best.score,\n      matchedQuestion: best.row?.question || '',\n      matchedIntent: best.row?.intent || '',\n      matchedCategory: best.row?.category || ''\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    SpeechResult: userRaw,\n    route: 'llm',\n    userQuestion: user,\n    score: best.score,\n    matchedQuestion: best.row?.question || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        2336
+      ],
+      "id": "a5ddc2b1-d41f-4c4f-8818-1f404f85c4b4",
+      "name": "Check if FAQ Exists"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "77f82364-487a-4d51-a04a-000125d313f7",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "faq",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2960,
+        2352
+      ],
+      "id": "4caee86e-8a5a-42ae-80f0-5e7ca53eca90",
+      "name": "If",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3888,
+        2352
+      ],
+      "id": "ef6cc953-fdf8-4999-95b6-b54433c63eda",
+      "name": "Send TwiML Back1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get AI reply\nconst aiReply =\n  $json?.assistantReply ||\n  $json?.answer ||\n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content ||\n  \"Sorry, I didn't catch that.\";\n\nconst selectedVoice = $('Merge1').first().json.selected_voice || \"Polly.Matthew-Neural\";\nconst calledNumber = $json?.calledNumber || '+1-555-0100';\n// Use a local Twilio DID as callerId — toll-free numbers get blocked by carriers\nconst localCallerId = $json?.callerPhone || calledNumber; // customer's real number as callerId\nconst isEndCall = $json?.isEndCall === true;\nconst isTransfer = $json?.isTransfer === true;\nconst isBook = $json?.isBook === true;\n\nlet twiml;\n\nif (isTransfer) {\n  // Hunt Group: dynamic transfer numbers from account_settings\n  let huntNumbers = [];\n  try {\n    huntNumbers = typeof $json.hunt_group_numbers === 'string'\n      ? JSON.parse($json.hunt_group_numbers)\n      : ($json.hunt_group_numbers || []);\n  } catch(e) { huntNumbers = ['+17732005177', '+21626387319']; }\n  \n  if (huntNumbers.length === 0) huntNumbers = ['+17732005177', '+21626387319'];\n  const timeout = $json.transfer_timeout || 20;\n  \n  // Build TwiML with sequential <Dial> for each hunt group number\n  twiml = '<Response>' +\n    '<Say voice=\"' + selectedVoice + '\">' + aiReply + '</Say>';\n  \n  for (let i = 0; i < huntNumbers.length; i++) {\n    twiml += '<Dial timeout=\"' + timeout + '\" callerId=\"' + localCallerId + '\">' +\n      '<Number>' + huntNumbers[i] + '</Number>' +\n    '</Dial>';\n    if (i < huntNumbers.length - 1) {\n      const retryMsg = i === 0\n        ? 'Our primary agent is unavailable. Let me try another team member.'\n        : 'That team member is also unavailable. Let me try one more.';\n      twiml += '<Say voice=\"' + selectedVoice + '\">' + retryMsg + '</Say>';\n    }\n  }\n  \n  twiml += '<Say voice=\"' + selectedVoice + '\">Sorry, no agents are available right now. Please try again later or leave a message on our website. Goodbye!</Say>' +\n    '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n  '</Response>';\n} else if (isBook) {\n  // Redirect to appointment booking workflow\n  const bookingUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/appointment-booking';\n  \n  twiml = '<Response>' +\n    '<Say voice=\"' + selectedVoice + '\">' + aiReply + '</Say>' +\n    '<Redirect method=\"POST\">' + bookingUrl + '</Redirect>' +\n  '</Response>';\n} else if (isEndCall) {\n  // Caller said goodbye - play farewell and redirect to callback\n  twiml = '<Response>' +\n    '<Say voice=\"' + selectedVoice + '\">' + aiReply + '</Say>' +\n    '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n  '</Response>';\n} else {\n  // Normal conversation loop\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Say voice=\"' + selectedVoice + '\">' + aiReply + '</Say>' +\n    '</Gather>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n  '</Response>';\n}\n\nreturn [{ json: { twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        2352
+      ],
+      "id": "d2a19ae4-96e4-41e5-9168-4c4a44f8c75f",
+      "name": "Build Reply TwiML1"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2512,
+        2576
+      ],
+      "id": "fe605057-ffa4-4838-a788-1bbaaa68edf7",
+      "name": "Send TwiML Back2"
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "useDataOfInput": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1920,
+        2304
+      ],
+      "id": "ab774335-34a4-4fa7-a32c-7e75cc40517c",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract fields from Merge result\nconst body = $json.body || {};\nconst query = $json.query || {};\n\nconst retryCount = parseInt(query.retry) || 0;\n\n// === BUSINESS HOURS CHECK (only on first call, retry=0) ===\n// Configure your business hours here (US Central Time)\nconst BUSINESS_HOURS = {\n  timezone: 'America/Chicago',\n  start: 9,   // 9:00 AM\n  end: 17,    // 6:00 PM (18:00)\n  workDays: [1, 2, 3, 4, 5]  // Mon-Fri (0=Sun, 6=Sat)\n};\n\nlet isAfterHours = false;\nif (retryCount === 0) {\n  const now = new Date();\n  // Convert to business timezone\n  const options = { timeZone: BUSINESS_HOURS.timezone, hour: 'numeric', hour12: false };\n  const currentHour = parseInt(new Intl.DateTimeFormat('en-US', options).format(now));\n  const dayOptions = { timeZone: BUSINESS_HOURS.timezone, weekday: 'short' };\n  const dayStr = new Intl.DateTimeFormat('en-US', dayOptions).format(now);\n  const dayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };\n  const currentDay = dayMap[dayStr] ?? new Date().getDay();\n  \n  isAfterHours = !BUSINESS_HOURS.workDays.includes(currentDay) \n    || currentHour < BUSINESS_HOURS.start \n    || currentHour >= BUSINESS_HOURS.end;\n}\n\nreturn {\n  // 1. Twilio fields\n  SpeechResult: body.SpeechResult || \"\",\n  CallSid: body.CallSid || \"\",\n  From: body.From || \"\",\n  To: body.To || \"\",\n  \n  // 2. Database config fields\n  selected_voice: $json.selected_voice || \"Polly.Matthew-Neural\",\n  tier: $json.tier || \"starter\",\n  customer_name: $json.name || \"Guest\",\n  \n  // 5. Hunt group transfer numbers\n  hunt_group_numbers: $json.hunt_group_numbers || '[\"+17732005177\",\"+21626387319\"]',\n  transfer_timeout: $json.transfer_timeout || 20,\n  \n  // 3. Derived fields\n  lookup_phone: (body.From || \"\").replace('+', ''),\n  is_timeout: !(body.SpeechResult),\n  retry_count: retryCount,\n  \n  // 4. Business hours\n  is_after_hours: isAfterHours\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        3072
+      ],
+      "id": "a947befc-6e5e-47d9-a505-81c5077c5f31",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.retry_count }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1904,
+        2608
+      ],
+      "id": "3c2764b4-fc02-4559-9e9a-5cc871251b6a",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const selectedVoice = $('Merge1').first().json.selected_voice || \"Polly.Matthew-Neural\";\n\nconst response = `\n<Response>\n    <Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">\n        <Say voice=\"${selectedVoice}\">I'm sorry, I still didn't hear you. Are you still there? Please let me know how I can help.</Say>\n    </Gather>\n    <Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=2</Redirect>\n</Response>\n`;\nreturn [{ json: { twiml: response } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        2720
+      ],
+      "id": "7bc58f6f-0379-40b1-a96e-28486b907ab5",
+      "name": "Build Greeting TwiML1"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2512,
+        2736
+      ],
+      "id": "6dc8ebf9-3533-4383-bf5c-7cbfb383ba97",
+      "name": "Send TwiML Back3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const selectedVoice = $('Merge1').first().json.selected_voice || \"Polly.Matthew-Neural\";\n\nconst response = `\n<Response>\n    <Say voice=\"${selectedVoice}\">I haven't received a response, so I will end the call now. Thank you for calling 360 Group. Goodbye!</Say>\n    <Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>\n    <Hangup/>\n</Response>\n`;\nreturn [{ json: { twiml: response } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        2880
+      ],
+      "id": "2de69630-7891-4bd5-aa60-8d0a85918833",
+      "name": "Build Greeting TwiML2"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2512,
+        2880
+      ],
+      "id": "dff35d43-85c2-48cf-8e21-e57cb820699c",
+      "name": "Send TwiML Back4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e1295786-a255-4d2b-9da1-7088bebcd73f",
+              "leftValue": "={{ $json.tier }}",
+              "rightValue": "starter",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        3088
+      ],
+      "id": "8375099c-5726-448d-8eea-2bab74ad43b7",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        496,
+        3072
+      ],
+      "id": "85028564-9ade-41d0-8f99-dd26c740ad4c",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "daf7c516-03d9-4b30-9532-2695c2787681",
+              "leftValue": "={{ $json.SpeechResult }}",
+              "rightValue": "value2",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        3504
+      ],
+      "id": "d2bff886-ff18-42be-aa4b-29e86054c5c5",
+      "name": "Has Speech?1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Growth Greeting TwiML - dynamic new vs returning caller\nconst data = $('Parse Caller Info').first().json;\nconst voiceId = data.selected_voice || 'Polly.Matthew-Neural';\nconst isPolly = voiceId && voiceId.startsWith('Polly.');\nconst isNewCaller = data.isNewCaller;\nconst callerName = data.callerName || '';\n\nlet greeting;\nif (isNewCaller) {\n  greeting = \"Thank you for calling 3 6 0 Group. We are the parent ecosystem for 3 6 0 D M M C, our AI integration and automation partner for small and midsized businesses. 3 6 0 EEVO dot A I, our engineering and innovation platform company. And Evolve Health A I, our healthcare AI solutions division. May I have your name please?\";\n} else {\n  // Privacy: do NOT greet by name — let GPT verify identity first\n  greeting = \"Thank you for calling 3 6 0 Group. I see you have called us before. For security, may I confirm your name please? How can I help you today?\";\n}\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Say voice=\"' + voiceId + '\">' + greeting + '</Say>' +\n    '</Gather>' +\n    '<Say voice=\"' + voiceId + '\">' + greeting + '</Say>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(greeting) + '&voice_id=' + voiceId;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Play>' + audioUrl + '</Play>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n  '</Response>';\n}\n\nreturn [{ json: { twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        3472
+      ],
+      "id": "111855bd-421f-43f3-8fa8-19e4a7e30481",
+      "name": "Build Greeting TwiML3"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-4-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are the YourCompany Virtual Assistant — a professional, warm, and friendly customer-service representative for YourCompany, an AI consulting and digital-transformation agency.\nYour job:\n- Answer questions, guide potential clients, and help with basic support requests.\n- Speak naturally and conversationally in 1–2 short sentences (under 25 words).\n- Use contractions and clear phrasing suitable for text-to-speech.\n- Never say you are an AI. Always speak as part of the YourCompany team.\n\n\n## CALLER PRIVACY & IDENTITY VERIFICATION\nYou have access to two types of caller information:\n\n1. SAFE CONTEXT (labeled \"Caller context (verified safe)\") — You can reference this freely. It contains non-identifying information like service interests and call history.\n\n2. PROTECTED CONTEXT (labeled \"PROTECTED caller info\") — This contains personal information (name, email, etc.). You MUST verify the caller's identity BEFORE using ANY of this information.\n\nVERIFICATION RULES:\n- If there is PROTECTED caller info, you MUST verify before using it.\n- To verify: ask \"May I have your name, please?\" and wait for their response.\n- ONLY if their stated name matches the stored name (case-insensitive, first name is sufficient), consider them verified.\n- Once verified, you may use their name and other protected info naturally for the rest of the call.\n- If the name does NOT match, treat them as a new caller. Do NOT reveal what name you have on file. Simply say \"Thank you! And how can I help you today?\"\n- NEVER say \"I have a different name on file\" or \"That doesn't match our records\" — this confirms data exists and is a privacy leak.\n- If no PROTECTED context exists, proceed normally as a new caller.\n\nCONSENT FOR MEMORY:\n- For NEW callers: after capturing their name, ask: \"Would you like me to remember your details for future calls so we can serve you faster next time?\"\n- If yes: note [CONSENT_YES] at the end of your response (this triggers storage consent).\n- If no: note [CONSENT_NO] and say \"No problem at all!\" Continue the call normally.\n- NEVER pressure callers to consent. Ask once, respect their answer.\n\nFORGET-ME REQUEST:\n- If a caller says \"forget me\", \"delete my data\", \"remove my information\", or similar:\n- Respond with: \"[FORGET_ME] Absolutely, I'll remove all stored information associated with your number. Is there anything else I can help you with?\"\n- This triggers a full data deletion.\n\n---\nAbout the company:\nYourCompany helps small and medium businesses unlock their potential through AI technology and human creativity.  \nThe company provides complete digital transformation solutions through **360° Full Lifecycle Management** — planning, implementation, and ongoing evolution.\nCore service pillars:\n1. **Digital Solutions** – AI-driven automation systems that improve efficiency, productivity, and innovation.\n2. **Media Content Creation** – Blending AI with human creativity for high-impact brand storytelling and audience engagement.\n3. **Marketing Strategies** – Data-informed, AI-powered marketing campaigns for growth and visibility.\n4. **Customer Experience (CX)** – AI-enhanced design and insight to improve satisfaction and loyalty.\n5. **AI Strategy & Implementation** – Roadmapping, consulting, and integration of scalable AI solutions.\n6. **Data Analytics & Predictive Insights** – Turning data into business decisions and growth strategies.\n---\nFAQ coverage (respond conversationally):\n- **What services do you provide?** — Summarize the main pillars above in natural speech.  \n- **Can I get information about pricing?** — Explain that pricing depends on scope; offer to connect with a consultant for a tailored quote.  \n- **What products do you sell?** — Clarify that YourCompany provides *services and solutions*, not off-the-shelf products.  \n- **What is your website?** — \"Our website is YourCompany.com — that's three-six-zero D-M-M-C dot com.\"  \n- **How can you help my business?** — Explain the value: combining AI and human creativity to automate, optimize, and grow.  \n- **I need to create a service ticket / I need IT Support** — Confirm understanding, take basic details (name, company, issue), and offer to connect or log a ticket.\nIf you don't know something, offer to have a specialist follow up.\n---\nSMS follow-up:\nIf you're discussing services, pricing, scheduling, or sharing specific info, naturally offer to text the caller the details after the call. Keep it casual.\n- \"Want me to text you that booking link after we hang up?\"\n- \"I can send you a quick summary by text if that helps.\"\n- \"Would you like the pricing details sent to your phone?\"\nIf they say yes, confirm you'll send it to the number they're calling from. If they decline, move on. Only offer once per call.\n---\nTone & delivery:\n- Sound confident, courteous, and human.\n- Avoid jargon unless the caller asks for technical detail.\n- No lists, disclaimers, or filler phrases like \"as an AI assistant.\"\n- Always close each turn with a complete thought or a helpful next step.\n---\nEnding the call:\nWhen the caller clearly wants to end the call, start your farewell with [END_CALL].\nExample: \"[END_CALL] Thanks for calling 360 Group! Have a great day!\"\nOnly use [END_CALL] for genuine goodbyes, not when declining a specific offer.\n---\nLive agent transfer:\nIf the caller asks to speak with a real person, manager, or human, start your response with [TRANSFER].\nExample: \"[TRANSFER] Sure, let me connect you now. Please hold.\"\nOnly use [TRANSFER] for explicit requests to talk to a human.\n---\nOutput rules:\nReturn speakable text only — no markup, no bullets, no parentheses.\n---\nPlease refer to the uploaded CSV file for any questions that are still unclear.\n\n\nLEAD CAPTURE (NEW CALLERS):\n- Check the \"Returning caller info\" section. If there's no name, this is a NEW caller.\n- The greeting already asked for their name. Their first message is likely their name.\n- When you receive their name, respond warmly: \"Thank you, [Name]! In case we get disconnected, may I have your email address so we can send you more information regarding this call?\"\n- If they provide an email, confirm it: \"Great, I have your email as [email]. Is that correct?\"\n- If they decline to give email, say \"No problem at all!\" and move on. A name is enough.\n- NEVER ask for their name again if it's already in the returning caller info.\n- NEVER ask for email again if it's already in the returning caller info.\n- After capturing name (and optionally email), transition naturally: \"Now, how can I help you today?\"\n\nRETURNING CALLERS:\n- If the caller's name IS in the returning caller info, they're a returning caller.\n- The greeting already said \"Welcome back, [Name]!\". Do NOT ask for their name again.\n- If their email is not in the returning caller info, ask for it at a natural moment (not immediately).\n\n\n\n\n## APPOINTMENT BOOKING\nIf the caller wants to book, schedule, or make an appointment:\n1. First, ask what day and time work best for them.\n2. If they mention a specific service, note it.\n3. Once you have their preferred day and approximate time, respond with [BOOK] followed by a brief message.\n\nExamples:\n- Caller: \"I need to schedule a cleaning\" → Ask: \"Sure! What day and time work best for you?\"\n- Caller: \"Thursday afternoon\" → \"[BOOK] Great, let me check Thursday afternoon for you. One moment please.\"\n- Caller: \"Can I come in tomorrow at 10?\" → \"[BOOK] Let me check tomorrow morning availability for you.\"\n\nRULES:\n- ALWAYS collect the caller's preferred day/time BEFORE using [BOOK]\n- NEVER use [BOOK] on the first mention of booking — ask for details first\n- If the caller is vague (\"sometime next week\"), ask them to narrow it down to a day\n- Only use [BOOK] once per booking attempt\n\nPRONUNCIATION: When saying the company name \"360\", always write it as \"3 6 0\" (three separate digits) so text-to-speech reads it correctly. For example: \"3 6 0 Group\", \"3 6 0 D.M.M.C.\", \"3 6 0 EEVO dot A.I.\". Never write \"360\" as a single number.\n",
+              "role": "system"
+            },
+            {
+              "content": "={{ ($('Initialize Memory1').first().json.callerContext ? $('Initialize Memory1').first().json.callerContext + '\\n\\n' : '') + ($('Initialize Memory1').first().json.historyForPrompt ? 'Previous conversation:\\n' + $('Initialize Memory1').first().json.historyForPrompt + '\\n\\nCurrent message: ' : '') + ($json[\"SpeechResult\"] || \"No speech input detected.\") }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        3264,
+        3376
+      ],
+      "id": "427a5480-a5ca-433e-81dc-b09bb4cb2da0",
+      "name": "Message a model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "XIfko2o0mrpebRfj",
+          "name": "OpenAi account POD2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Growth FAQ Reply - voice-type-aware\nconst faqAnswer = $json?.answer;\nconst aiReply = faqAnswer ||\n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content ||\n  \"Sorry, I didn't catch that.\";\n\nconst voiceId = $('Merge1').first().json.selected_voice;\nconst isPolly = voiceId && voiceId.startsWith('Polly.');\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Say voice=\"' + voiceId + '\">' + aiReply + '</Say>' +\n    '</Gather>' +\n    '<Say voice=\"' + voiceId + '\">' + aiReply + '</Say>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(aiReply) + '&voice_id=' + voiceId;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Play>' + audioUrl + '</Play>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n  '</Response>';\n}\n\nreturn [{ json: { twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3584,
+        3088
+      ],
+      "id": "69c1e34c-08d3-40ce-ba7b-d745ad680af2",
+      "name": "Build Reply TwiML2"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3792,
+        3088
+      ],
+      "id": "2b2c107e-bb10-4d3e-a046-e48c819750f3",
+      "name": "Send TwiML Back5"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "=JQ5IEqhxye9kF2ls",
+          "mode": "id"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        3168
+      ],
+      "id": "9ed3a3ed-ab9a-4ef1-b56f-e5457823c58b",
+      "name": "Get row(s)1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-question",
+              "name": "question",
+              "value": "={{ $json.question }}",
+              "type": "string"
+            },
+            {
+              "id": "field-answer",
+              "name": "answer",
+              "value": "={{ $json.answer }}",
+              "type": "string"
+            },
+            {
+              "id": "field-alt",
+              "name": "alt_questions",
+              "value": "={{ $json.alt_questions }}",
+              "type": "string"
+            },
+            {
+              "id": "field-intent",
+              "name": "intent",
+              "value": "={{ $json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "field-category",
+              "name": "category",
+              "value": "={{ $json.category }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1648,
+        3168
+      ],
+      "id": "de52d747-c1a9-4e56-9797-673b6e7cde86",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cache QNA: store FAQ rows in workflow static data\nconst store = $getWorkflowStaticData('global');\n\n// Pull all incoming items (each item is one FAQ row JSON)\nconst rows = $input.all().map(i => i.json);\n\n// Store\nstore.faqRows = rows;\n\n// Return something small for visibility\nreturn [{ json: { ok: true, cached: rows.length } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        3168
+      ],
+      "id": "cc781b31-4551-4eba-986a-e169c77aec5a",
+      "name": "Cache QNA1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Load FAQ rows cached by Cache QNA\nconst store = $getWorkflowStaticData('global');\nconst rows = store.faqRows || [];\n\n// User's speech input\nconst userRaw =\n  $json?.body?.SpeechResult ??\n  $json?.SpeechResult ??\n  $json?.body?.speechResult ??\n  '';\n\nconst user = String(userRaw).toLowerCase().trim();\n\n// Dice similarity on bigrams\nfunction dice(a, b) {\n  const grams = (s) => {\n    const z = String(s).replace(/[^a-z0-9 ]/gi, '').toLowerCase();\n    const out = [];\n    for (let i = 0; i < z.length - 1; i++) out.push(z.slice(i, i + 2));\n    return out;\n  };\n\n  const A = grams(a), B = grams(b);\n  if (!A.length || !B.length) return 0;\n\n  const m = new Map();\n  for (const x of A) m.set(x, (m.get(x) || 0) + 1);\n\n  let inter = 0;\n  for (const x of B) {\n    const c = m.get(x) || 0;\n    if (c > 0) { inter++; m.set(x, c - 1); }\n  }\n\n  return (2 * inter) / (A.length + B.length);\n}\n\nlet best = { score: 0, row: null };\n\nfor (const r of rows) {\n  // Match against the main question\n  const q = String(r.question || '').toLowerCase().trim();\n  if (q) {\n    const s = dice(user, q);\n    if (s > best.score) best = { score: s, row: r };\n  }\n\n  // Also match against each alt_question (pipe-separated)\n  const alts = String(r.alt_questions || '').split('|');\n  for (const alt of alts) {\n    const a = alt.toLowerCase().trim();\n    if (!a) continue;\n    const s = dice(user, a);\n    if (s > best.score) best = { score: s, row: r };\n  }\n}\n\n// Use the answer column\nconst bestAnswer = best.row\n  ? String(best.row.answer || '').trim()\n  : '';\n\n// Route decision\nif (best.score >= 0.5 && bestAnswer) {\n  return [{\n    json: {\n      SpeechResult: userRaw,\n      route: 'faq',\n      answer: bestAnswer.slice(0, 260),\n      score: best.score,\n      matchedQuestion: best.row?.question || '',\n      matchedIntent: best.row?.intent || '',\n      matchedCategory: best.row?.category || ''\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    SpeechResult: userRaw,\n    route: 'llm',\n    userQuestion: user,\n    score: best.score,\n    matchedQuestion: best.row?.question || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        3296
+      ],
+      "id": "36b73853-3213-4f4e-aacb-6d8bb5ccca43",
+      "name": "Check if FAQ Exists1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "77f82364-487a-4d51-a04a-000125d313f7",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "faq",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2976,
+        3312
+      ],
+      "id": "d6f420f6-bf74-45ef-837c-325d243b7abb",
+      "name": "If2",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        4032,
+        3360
+      ],
+      "id": "e8a8476a-b689-4daf-bb34-364d2fd48d20",
+      "name": "Send TwiML Back6"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Growth LLM Reply - voice-type-aware with goodbye + transfer\nconst aiReply =\n  $json?.assistantReply ||\n  $json?.answer ||\n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content ||\n  \"Sorry, I didn't catch that.\";\n\nconst voiceId = $('Merge1').first().json.selected_voice;\nconst calledNumber = $json?.calledNumber || '+1-555-0100';\n// Use a local Twilio DID as callerId — toll-free numbers get blocked by carriers\nconst localCallerId = $json?.callerPhone || calledNumber; // customer's real number as callerId\nconst isPolly = voiceId && voiceId.startsWith('Polly.');\nconst isEndCall = $json?.isEndCall === true;\nconst isTransfer = $json?.isTransfer === true;\nconst isBook = $json?.isBook === true;\n\nlet twiml;\n\nif (isTransfer) {\n  // Hunt Group: dynamic transfer numbers from account_settings\n  let huntNumbers = [];\n  try {\n    huntNumbers = typeof $json.hunt_group_numbers === 'string'\n      ? JSON.parse($json.hunt_group_numbers)\n      : ($json.hunt_group_numbers || []);\n  } catch(e) { huntNumbers = ['+17732005177', '+21626387319']; }\n  \n  if (huntNumbers.length === 0) huntNumbers = ['+17732005177', '+21626387319'];\n  const timeout = $json.transfer_timeout || 20;\n  \n  if (isPolly) {\n    twiml = '<Response>' +\n      '<Say voice=\"' + voiceId + '\">' + aiReply + '</Say>';\n    for (let i = 0; i < huntNumbers.length; i++) {\n      twiml += '<Dial timeout=\"' + timeout + '\" callerId=\"' + localCallerId + '\"><Number>' + huntNumbers[i] + '</Number></Dial>';\n      if (i < huntNumbers.length - 1) {\n        const retryMsg = i === 0 ? 'Our primary agent is unavailable. Let me try another team member.' : 'That team member is also unavailable. Let me try one more.';\n        twiml += '<Say voice=\"' + voiceId + '\">' + retryMsg + '</Say>';\n      }\n    }\n    twiml += '<Say voice=\"' + voiceId + '\">Sorry, no agents are available right now. Please try again later. Goodbye!</Say>' +\n      '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect></Response>';\n  } else {\n    const replyAudioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(aiReply) + '&voice_id=' + voiceId;\n    twiml = '<Response><Play>' + replyAudioUrl + '</Play>';\n    for (let i = 0; i < huntNumbers.length; i++) {\n      twiml += '<Dial timeout=\"' + timeout + '\" callerId=\"' + localCallerId + '\"><Number>' + huntNumbers[i] + '</Number></Dial>';\n      if (i < huntNumbers.length - 1) {\n        const retryMsg = i === 0 ? 'Our primary agent is unavailable. Let me try another team member.' : 'That team member is also unavailable. Let me try one more.';\n        twiml += '<Play>' + 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(retryMsg) + '&voice_id=' + voiceId + '</Play>';\n      }\n    }\n    twiml += '<Play>' + 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent('Sorry, no agents are available right now. Please try again later. Goodbye!') + '&voice_id=' + voiceId + '</Play>' +\n      '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect></Response>';\n  }\n} else if (isBook) {\n  // Redirect to appointment booking workflow\n  const bookingUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/appointment-booking';\n  \n  if (isPolly) {\n    twiml = '<Response>' +\n      '<Say voice=\"' + voiceId + '\">' + aiReply + '</Say>' +\n      '<Redirect method=\"POST\">' + bookingUrl + '</Redirect>' +\n    '</Response>';\n  } else {\n    const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(aiReply) + '&voice_id=' + voiceId;\n    twiml = '<Response>' +\n      '<Play>' + audioUrl + '</Play>' +\n      '<Redirect method=\"POST\">' + bookingUrl + '</Redirect>' +\n    '</Response>';\n  }\n} else if (isEndCall) {\n  if (isPolly) {\n    twiml = '<Response>' +\n      '<Say voice=\"' + voiceId + '\">' + aiReply + '</Say>' +\n      '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n    '</Response>';\n  } else {\n    const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(aiReply) + '&voice_id=' + voiceId;\n    twiml = '<Response>' +\n      '<Play>' + audioUrl + '</Play>' +\n      '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n    '</Response>';\n  }\n} else {\n  if (isPolly) {\n    twiml = '<Response>' +\n      '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n        '<Say voice=\"' + voiceId + '\">' + aiReply + '</Say>' +\n      '</Gather>' +\n      '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n    '</Response>';\n  } else {\n    const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(aiReply) + '&voice_id=' + voiceId;\n    twiml = '<Response>' +\n      '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n        '<Play>' + audioUrl + '</Play>' +\n      '</Gather>' +\n      '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1</Redirect>' +\n    '</Response>';\n  }\n}\n\nreturn [{ json: { twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3856,
+        3360
+      ],
+      "id": "cdaf32a6-1273-490f-887c-eb327a7bdc50",
+      "name": "Build Reply TwiML3"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2576,
+        3472
+      ],
+      "id": "6bd6760d-2a76-4cb4-a93b-4d707be68f11",
+      "name": "Send TwiML Back7"
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "useDataOfInput": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2016,
+        3344
+      ],
+      "id": "12ce9b4e-5a48-40b6-b009-f99f969eb979",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.retry_count }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1968,
+        3520
+      ],
+      "id": "a12ba2af-d234-41e3-97fb-9c0d288e61c6",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Growth Retry TwiML - voice-type-aware\nconst retryText = \"I'm sorry, I still didn't hear you. Are you still there? Please let me know how I can help.\";\nconst voiceId = $('Merge1').first().json.selected_voice;\nconst isPolly = voiceId && voiceId.startsWith('Polly.');\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Say voice=\"' + voiceId + '\">' + retryText + '</Say>' +\n    '</Gather>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=2</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(retryText) + '&voice_id=' + voiceId;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Redirect>https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=2</Redirect>' +\n  '</Response>';\n}\n\nreturn [{ json: { twiml: twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        3632
+      ],
+      "id": "6b8012a2-d650-45ff-b518-6c8938859ff2",
+      "name": "Build Greeting TwiML4"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2576,
+        3632
+      ],
+      "id": "b5d302c6-3da0-4f97-9011-8967bbb59715",
+      "name": "Send TwiML Back8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Growth Goodbye TwiML - voice-type-aware\nconst byeText = \"I haven't received a response, so I will end the call now. Thank you for calling 360 Group. Goodbye!\";\nconst voiceId = $('Merge1').first().json.selected_voice;\nconst isPolly = voiceId && voiceId.startsWith('Polly.');\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Say voice=\"' + voiceId + '\">' + byeText + '</Say>' +\n    '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(byeText) + '&voice_id=' + voiceId;\n  twiml = '<Response>' +\n    '<Play>' + audioUrl + '</Play>' +\n    '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n  '</Response>';\n}\n\nreturn [{ json: { twiml: twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        3792
+      ],
+      "id": "e9bef549-aaa4-412e-a77e-2d6b4f1a6cc3",
+      "name": "Build Greeting TwiML5"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.twiml}}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2576,
+        3792
+      ],
+      "id": "dd85a1a8-f7ff-4589-9865-7679b2b954ec",
+      "name": "Send TwiML Back9"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "customers",
+          "mode": "list",
+          "cachedResultName": "customers"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        2944
+      ],
+      "id": "8f52b4ce-1179-4eb0-a127-f61c0e9af549",
+      "name": "Select customers",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "account_settings",
+          "mode": "list",
+          "cachedResultName": "account_settings"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        3200
+      ],
+      "id": "775aa415-74c4-4090-bd5c-9f28cc69050a",
+      "name": "Select account_settings",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === SHORT-TERM + LONG-TERM MEMORY (Starter) ===\nconst mergeData = $('Merge').first().json;\nconst callSid = mergeData.CallSid || 'unknown_' + Date.now();\nconst callerPhone = mergeData.From || '';\nconst calledNumber = mergeData.To || '';\nconst callStatus = mergeData.CallStatus || '';\nconst userSpeech = mergeData.SpeechResult || '';\n\n// --- SHORT-TERM: Load conversation history from Postgres ---\nconst sessionRow = $('Load Session').first()?.json;\nlet history = [];\n\nif (sessionRow && sessionRow.conversation_history) {\n  try {\n    history = typeof sessionRow.conversation_history === 'string'\n      ? JSON.parse(sessionRow.conversation_history)\n      : sessionRow.conversation_history;\n    if (!Array.isArray(history)) history = [];\n  } catch (e) {\n    history = [];\n  }\n}\n\nif (userSpeech && userSpeech.trim()) {\n  history.push({\n    role: 'user',\n    content: userSpeech.trim(),\n    timestamp: new Date().toISOString()\n  });\n}\n\nif (history.length > 20) {\n  history = history.slice(-20);\n}\n\nconst historyForPrompt = history\n  .slice(0, -1)\n  .map(t => t.role.toUpperCase() + ': ' + t.content)\n  .join('\\n');\n\n// --- LONG-TERM: Privacy-Tiered Memory Loading ---\nconst memoryRows = $('Load Caller Memory').all() || [];\nconst SAFE_KEYS = [\"has_called_before\", \"preferred_language\", \"service_interest\", \"communication_preference\", \"call_count\", \"call_intent\", \"call_sentiment\", \"call_outcome\", \"last_call_date\", \"channel_preference\", \"preferred_contact_time\", \"timezone\"];\n\n// Split memory into safe (no verification needed) and protected (PII)\nconst safeFacts = [];\nconst protectedFacts = [];\n\nfor (const row of memoryRows) {\n  if (!row.json || !row.json.memory_key || !row.json.memory_value) continue;\n  const key = row.json.memory_key;\n  const value = row.json.memory_value;\n  const tier = row.json.privacy_tier || (SAFE_KEYS.includes(key) ? 'safe' : 'protected');\n  \n  if (tier === 'safe') {\n    safeFacts.push(key + ': ' + value);\n  } else {\n    protectedFacts.push(key + ': ' + value);\n  }\n}\n\n// Safe context: always injected into GPT\nlet callerContext = '';\nif (safeFacts.length > 0) {\n  callerContext = 'Caller context (verified safe):\\n' + safeFacts.join('\\n');\n}\n\n// Protected context: only injected after verification\n// The GPT prompt will handle the verification flow\nlet protectedContext = '';\nif (protectedFacts.length > 0) {\n  protectedContext = '\\n\\nPROTECTED caller info (DO NOT reveal until caller verifies identity):\\n' + protectedFacts.join('\\n');\n}\n\nconst isReturningCaller = (safeFacts.length + protectedFacts.length) > 0;\nconst hasProtectedData = protectedFacts.length > 0;\nconst storedName = memoryRows.find(r => r.json?.memory_key === 'name')?.json?.memory_value || '';\n\nreturn [{\n  json: {\n    SpeechResult: userSpeech,\n    CallSid: callSid,\n    From: callerPhone,\n    To: calledNumber,\n    CallStatus: callStatus,\n    callSid,\n    callerPhone,\n    calledNumber,\n    callStatus,\n    conversationHistory: history,\n    historyForPrompt: historyForPrompt || '',\n    callerContext: callerContext,\n    selected_voice: mergeData.selected_voice || 'Polly.Matthew-Neural',\n    tier: mergeData.tier || 'starter',\n    customer_name: mergeData.customer_name || 'Guest',\n    lookup_phone: mergeData.lookup_phone || '',\n    retry_count: mergeData.retry_count || 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2512,
+        2336
+      ],
+      "id": "703ac994-8893-43fe-91e3-5f983158f138",
+      "name": "Initialize Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === SHORT-TERM + LONG-TERM MEMORY (Growth) ===\nconst mergeData = $('Merge2').first().json;\nconst callSid = mergeData.CallSid || 'unknown_' + Date.now();\nconst callerPhone = mergeData.From || '';\nconst calledNumber = mergeData.To || '';\nconst callStatus = mergeData.CallStatus || '';\nconst userSpeech = mergeData.SpeechResult || '';\n\n// --- SHORT-TERM ---\nconst sessionRow = $('Load Session1').first()?.json;\nlet history = [];\n\nif (sessionRow && sessionRow.conversation_history) {\n  try {\n    history = typeof sessionRow.conversation_history === 'string'\n      ? JSON.parse(sessionRow.conversation_history)\n      : sessionRow.conversation_history;\n    if (!Array.isArray(history)) history = [];\n  } catch (e) {\n    history = [];\n  }\n}\n\nif (userSpeech && userSpeech.trim()) {\n  history.push({\n    role: 'user',\n    content: userSpeech.trim(),\n    timestamp: new Date().toISOString()\n  });\n}\n\nif (history.length > 50) {\n  history = history.slice(-50);\n}\n\nconst historyForPrompt = history\n  .slice(0, -1)\n  .map(t => t.role.toUpperCase() + ': ' + t.content)\n  .join('\\n');\n\n// --- LONG-TERM: Privacy-Tiered Memory Loading ---\nconst memoryRows = $('Load Caller Memory1').all() || [];\nconst SAFE_KEYS = [\"has_called_before\", \"preferred_language\", \"service_interest\", \"communication_preference\", \"call_count\", \"call_intent\", \"call_sentiment\", \"call_outcome\", \"last_call_date\", \"channel_preference\", \"preferred_contact_time\", \"timezone\"];\n\nconst safeFacts = [];\nconst protectedFacts = [];\n\nfor (const row of memoryRows) {\n  if (!row.json || !row.json.memory_key || !row.json.memory_value) continue;\n  const key = row.json.memory_key;\n  const value = row.json.memory_value;\n  const tier = row.json.privacy_tier || (SAFE_KEYS.includes(key) ? 'safe' : 'protected');\n  \n  if (tier === 'safe') {\n    safeFacts.push(key + ': ' + value);\n  } else {\n    protectedFacts.push(key + ': ' + value);\n  }\n}\n\nlet callerContext = '';\nif (safeFacts.length > 0) {\n  callerContext = 'Caller context (verified safe):\\n' + safeFacts.join('\\n');\n}\n\nlet protectedContext = '';\nif (protectedFacts.length > 0) {\n  protectedContext = '\\n\\nPROTECTED caller info (DO NOT reveal until caller verifies identity):\\n' + protectedFacts.join('\\n');\n}\n\nconst isReturningCaller = (safeFacts.length + protectedFacts.length) > 0;\nconst hasProtectedData = protectedFacts.length > 0;\nconst storedName = memoryRows.find(r => r.json?.memory_key === 'name')?.json?.memory_value || '';\n\nreturn [{\n  json: {\n    SpeechResult: userSpeech,\n    CallSid: callSid,\n    From: callerPhone,\n    To: calledNumber,\n    CallStatus: callStatus,\n    callSid,\n    callerPhone,\n    calledNumber,\n    callStatus,\n    conversationHistory: history,\n    historyForPrompt: historyForPrompt || '',\n    callerContext: callerContext,\n    selected_voice: mergeData.selected_voice || 'Polly.Matthew-Neural',\n    tier: mergeData.tier || 'growth',\n    customer_name: mergeData.customer_name || 'Guest',\n    lookup_phone: mergeData.lookup_phone || '',\n    retry_count: mergeData.retry_count || 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        3296
+      ],
+      "id": "e272a5e7-2864-4f0a-9b85-68752e2e6d3b",
+      "name": "Initialize Memory1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === STORE REPLY (Starter LLM — Postgres-backed) ===\nconst initData = $('Initialize Memory').first().json;\nconst history = [...(initData.conversationHistory || [])];\n\nlet assistantReply =\n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content || '';\n\n// Detect [END_CALL] flag\nconst isEndCall = assistantReply.startsWith('[END_CALL]');\nif (isEndCall) {\n  assistantReply = assistantReply.replace('[END_CALL]', '').trim();\n}\n\n// Detect [TRANSFER] flag (explicit or fallback phrase detection)\nlet isTransfer = assistantReply.startsWith('[TRANSFER]');\nif (isTransfer) {\n  assistantReply = assistantReply.replace('[TRANSFER]', '').trim();\n} else {\n  // Fallback: detect transfer intent from response content\n  const lowerReply = assistantReply.toLowerCase();\n  const transferPhrases = [\n    'connect you with', 'transfer you', 'let me connect you',\n    'transferring you', 'connecting you to', 'put you through',\n    'connect you to a', 'connect you right'\n  ];\n  isTransfer = transferPhrases.some(p => lowerReply.includes(p));\n}\n\n\n\n// Detect [CONSENT_YES] flag\nlet isConsentYes = assistantReply.includes('[CONSENT_YES]');\nif (isConsentYes) {\n  assistantReply = assistantReply.replace('[CONSENT_YES]', '').trim();\n}\n\n// Detect [CONSENT_NO] flag\nlet isConsentNo = assistantReply.includes('[CONSENT_NO]');\nif (isConsentNo) {\n  assistantReply = assistantReply.replace('[CONSENT_NO]', '').trim();\n}\n\n// Detect [FORGET_ME] flag\nlet isForgetMe = assistantReply.includes('[FORGET_ME]');\nif (isForgetMe) {\n  assistantReply = assistantReply.replace('[FORGET_ME]', '').trim();\n}\n\n// Detect [BOOK] flag\nlet isBook = assistantReply.startsWith('[BOOK]');\nif (isBook) {\n  assistantReply = assistantReply.replace('[BOOK]', '').trim();\n}\n\nif (assistantReply) {\n  history.push({\n    role: 'assistant',\n    content: assistantReply,\n    timestamp: new Date().toISOString()\n  });\n}\n\nconst historyJson = JSON.stringify(history).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  ...$json,\n  assistantReply,\n  isEndCall,\n  isTransfer,\n  isBook,\n  callSid: initData.callSid,\n  callerPhone: initData.callerPhone,\n  calledNumber: initData.calledNumber || '',\n  conversationHistory: history,\n  historyJson: historyJson,\n  selected_voice: $('Merge1').first().json.selected_voice || 'Polly.Matthew-Neural',\n  tier: 'starter',\n  hunt_group_numbers: initData.hunt_group_numbers || '[\"17732005177\",\"+21626387319\"]',\n  transfer_timeout: initData.transfer_timeout || 20\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3584,
+        2352
+      ],
+      "id": "a95b8c67-e093-4433-995f-7850cc220a70",
+      "name": "Store Reply (Starter LLM)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === STORE REPLY (Starter FAQ — Postgres-backed) ===\nconst initData = $('Initialize Memory').first().json;\nconst history = [...(initData.conversationHistory || [])];\n\nconst assistantReply = $json?.answer || '';\nif (assistantReply) {\n  history.push({\n    role: 'assistant',\n    content: assistantReply,\n    timestamp: new Date().toISOString()\n  });\n}\n\n// Pre-escape JSON for SQL insertion\nconst historyJson = JSON.stringify(history).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  ...$json,\n  callSid: initData.callSid,\n  callerPhone: initData.callerPhone,\n  calledNumber: initData.calledNumber || '',\n  conversationHistory: history,\n  historyJson: historyJson,\n  selected_voice: $('Merge1').first().json.selected_voice || 'Polly.Matthew-Neural',\n  tier: 'starter'\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        2048
+      ],
+      "id": "1dbb8b97-7a11-4425-bdfb-cfbe440b5a58",
+      "name": "Store Reply (Starter FAQ)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === STORE REPLY (Growth LLM — Postgres-backed) ===\nconst initData = $('Initialize Memory1').first().json;\nconst history = [...(initData.conversationHistory || [])];\n\nlet assistantReply =\n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content || '';\n\n// Detect [END_CALL] flag\nconst isEndCall = assistantReply.startsWith('[END_CALL]');\nif (isEndCall) {\n  assistantReply = assistantReply.replace('[END_CALL]', '').trim();\n}\n\n// Detect [TRANSFER] flag (explicit or fallback phrase detection)\nlet isTransfer = assistantReply.startsWith('[TRANSFER]');\nif (isTransfer) {\n  assistantReply = assistantReply.replace('[TRANSFER]', '').trim();\n} else {\n  // Fallback: detect transfer intent from response content\n  const lowerReply = assistantReply.toLowerCase();\n  const transferPhrases = [\n    'connect you with', 'transfer you', 'let me connect you',\n    'transferring you', 'connecting you to', 'put you through',\n    'connect you to a', 'connect you right'\n  ];\n  isTransfer = transferPhrases.some(p => lowerReply.includes(p));\n}\n\n\n\n// Detect [CONSENT_YES] flag\nlet isConsentYes = assistantReply.includes('[CONSENT_YES]');\nif (isConsentYes) {\n  assistantReply = assistantReply.replace('[CONSENT_YES]', '').trim();\n}\n\n// Detect [CONSENT_NO] flag\nlet isConsentNo = assistantReply.includes('[CONSENT_NO]');\nif (isConsentNo) {\n  assistantReply = assistantReply.replace('[CONSENT_NO]', '').trim();\n}\n\n// Detect [FORGET_ME] flag\nlet isForgetMe = assistantReply.includes('[FORGET_ME]');\nif (isForgetMe) {\n  assistantReply = assistantReply.replace('[FORGET_ME]', '').trim();\n}\n\n// Detect [BOOK] flag\nlet isBook = assistantReply.startsWith('[BOOK]');\nif (isBook) {\n  assistantReply = assistantReply.replace('[BOOK]', '').trim();\n}\n\nif (assistantReply) {\n  history.push({\n    role: 'assistant',\n    content: assistantReply,\n    timestamp: new Date().toISOString()\n  });\n}\n\nconst historyJson = JSON.stringify(history).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  ...$json,\n  assistantReply,\n  isEndCall,\n  isTransfer,\n  isBook,\n  callSid: initData.callSid,\n  callerPhone: initData.callerPhone,\n  calledNumber: initData.calledNumber || '',\n  conversationHistory: history,\n  historyJson: historyJson,\n  selected_voice: $('Merge1').first().json.selected_voice || 'Polly.Matthew-Neural',\n  tier: 'growth',\n  hunt_group_numbers: initData.hunt_group_numbers || '[\"17732005177\",\"+21626387319\"]',\n  transfer_timeout: initData.transfer_timeout || 20\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3616,
+        3360
+      ],
+      "id": "7e927e2b-b1d5-4296-98ce-e960a3643cfe",
+      "name": "Store Reply (Growth LLM)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === STORE REPLY (Growth FAQ — Postgres-backed) ===\nconst initData = $('Initialize Memory1').first().json;\nconst history = [...(initData.conversationHistory || [])];\n\nconst assistantReply = $json?.answer || '';\nif (assistantReply) {\n  history.push({\n    role: 'assistant',\n    content: assistantReply,\n    timestamp: new Date().toISOString()\n  });\n}\n\nconst historyJson = JSON.stringify(history).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  ...$json,\n  callSid: initData.callSid,\n  callerPhone: initData.callerPhone,\n  calledNumber: initData.calledNumber || '',\n  conversationHistory: history,\n  historyJson: historyJson,\n  selected_voice: $('Merge1').first().json.selected_voice || 'Polly.Matthew-Neural',\n  tier: 'growth'\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3264,
+        3216
+      ],
+      "id": "95ca85cb-0d02-4032-b749-7886417d867e",
+      "name": "Store Reply (Growth FAQ)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT conversation_history, started_at FROM voice_sessions WHERE call_sid = '{{ $json.CallSid || '' }}' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2112,
+        2336
+      ],
+      "id": "15e2af4b-ac3e-40fd-8339-3fc1c439f974",
+      "name": "Load Session",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT conversation_history, started_at FROM voice_sessions WHERE call_sid = '{{ $json.CallSid || '' }}' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2256,
+        3296
+      ],
+      "id": "2ccc2706-215d-4870-a75d-23a944659ab0",
+      "name": "Load Session1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO voice_sessions (call_sid, caller_phone, called_number, tier, selected_voice, conversation_history, last_activity_at) VALUES ('{{ $json.callSid }}', '{{ $json.callerPhone }}', '{{ $json.calledNumber || '' }}', '{{ $json.tier || 'starter' }}', '{{ $json.selected_voice || 'Polly.Matthew-Neural' }}', '{{ $json.historyJson }}'::jsonb, NOW()) ON CONFLICT (call_sid) DO UPDATE SET conversation_history = EXCLUDED.conversation_history, last_activity_at = NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3376,
+        1936
+      ],
+      "id": "fda87fe4-1fbf-47ad-8145-342cb4577aad",
+      "name": "Save Session FAQ",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO voice_sessions (call_sid, caller_phone, called_number, tier, selected_voice, conversation_history, last_activity_at) VALUES ('{{ $json.callSid }}', '{{ $json.callerPhone }}', '{{ $json.calledNumber || '' }}', '{{ $json.tier || 'starter' }}', '{{ $json.selected_voice || 'Polly.Matthew-Neural' }}', '{{ $json.historyJson }}'::jsonb, NOW()) ON CONFLICT (call_sid) DO UPDATE SET conversation_history = EXCLUDED.conversation_history, last_activity_at = NOW(), booking_context = CASE WHEN '{{ $json.isConsentYes || false }}' = 'true' THEN '{\"consent\": true}'::jsonb WHEN '{{ $json.isForgetMe || false }}' = 'true' THEN '{\"forget_me\": true}'::jsonb ELSE voice_sessions.booking_context END;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3760,
+        2528
+      ],
+      "id": "4d4cb6f0-2bbd-432b-a9f4-d24ef0b9e79b",
+      "name": "Save Session LLM",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO voice_sessions (call_sid, caller_phone, called_number, tier, selected_voice, conversation_history, last_activity_at) VALUES ('{{ $json.callSid }}', '{{ $json.callerPhone }}', '{{ $json.calledNumber || '' }}', '{{ $json.tier || 'growth' }}', '{{ $json.selected_voice || 'Polly.Matthew-Neural' }}', '{{ $json.historyJson }}'::jsonb, NOW()) ON CONFLICT (call_sid) DO UPDATE SET conversation_history = EXCLUDED.conversation_history, last_activity_at = NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3424,
+        2992
+      ],
+      "id": "33f5ac40-8f6e-48ad-9976-65d6acdb9e28",
+      "name": "Save Session1 FAQ",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO voice_sessions (call_sid, caller_phone, called_number, tier, selected_voice, conversation_history, last_activity_at) VALUES ('{{ $json.callSid }}', '{{ $json.callerPhone }}', '{{ $json.calledNumber || '' }}', '{{ $json.tier || 'growth' }}', '{{ $json.selected_voice || 'Polly.Matthew-Neural' }}', '{{ $json.historyJson }}'::jsonb, NOW()) ON CONFLICT (call_sid) DO UPDATE SET conversation_history = EXCLUDED.conversation_history, last_activity_at = NOW(), booking_context = CASE WHEN '{{ $json.isConsentYes || false }}' = 'true' THEN '{\"consent\": true}'::jsonb WHEN '{{ $json.isForgetMe || false }}' = 'true' THEN '{\"forget_me\": true}'::jsonb ELSE voice_sessions.booking_context END;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3744,
+        3536
+      ],
+      "id": "1bf76fb6-cf55-452e-a16f-b37dc012bd94",
+      "name": "Save Session1 LLM",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT memory_key, memory_value, updated_at FROM caller_memory\nWHERE caller_phone = '{{ $('Code in JavaScript').first().json.From || '' }}'\nORDER BY updated_at DESC LIMIT 20;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2352,
+        2336
+      ],
+      "id": "4174388a-b1ea-409d-af78-4c82750f3bf8",
+      "name": "Load Caller Memory",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT memory_key, memory_value, updated_at FROM caller_memory\nWHERE caller_phone = '{{ $('Code in JavaScript').first().json.From || '' }}'\nORDER BY updated_at DESC LIMIT 20;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2448,
+        3280
+      ],
+      "id": "56a29183-cbda-4250-a90d-ce41fedf323c",
+      "name": "Load Caller Memory1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "after-hours-check",
+              "leftValue": "={{ $json.is_after_hours }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        976,
+        2912
+      ],
+      "id": "ec3e03e9-482e-4f2c-bf76-8876ac014980",
+      "name": "Is After Hours?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === AFTER HOURS GREETING ===\nconst afterHoursMsg = \"Thank you for calling 360 Group. \" +\n  \"Our office hours are Monday through Friday, 9 AM to 6 PM Central Time. \" +\n  \"Please leave a message after the tone, or call back during business hours. \" +\n  \"You can also visit our website at 360 D M M C dot com. Thank you!\";\n\nconst selectedVoice = $json.selected_voice || \"Polly.Matthew-Neural\";\n\nconst twiml = '<Response>' +\n  '<Say voice=\"' + selectedVoice + '\">' + afterHoursMsg + '</Say>' +\n  '<Record maxLength=\"120\" playBeep=\"true\" action=\"https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status\" method=\"POST\" />' +\n  '<Say voice=\"' + selectedVoice + '\">We did not receive a recording. Goodbye!</Say>' +\n  '<Redirect method=\"POST\">https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice-status</Redirect>' +\n  '</Response>';\n\nreturn [{ json: { twiml: twiml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        1856
+      ],
+      "id": "66041ee4-a420-4c0e-ad65-4c934b89d1cd",
+      "name": "After Hours TwiML"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.twiml }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1632,
+        1856
+      ],
+      "id": "beee846d-bf9f-4fe4-a62f-f6670e0db1a0",
+      "name": "Send After Hours TwiML"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT memory_key, memory_value FROM caller_memory\nWHERE caller_phone = '{{ $json.From || '' }}'\nAND memory_key IN ('name', 'email')\nORDER BY memory_key LIMIT 5;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1472,
+        2544
+      ],
+      "id": "46b867f3-735b-4569-a833-91f19072a950",
+      "name": "Lookup Caller Name",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse caller memory for greeting\nconst rows = $input.all() || [];\nlet callerName = '';\nlet callerEmail = '';\n\nfor (const row of rows) {\n  if (row.json.memory_key === 'name') callerName = row.json.memory_value || '';\n  if (row.json.memory_key === 'email') callerEmail = row.json.memory_value || '';\n}\n\nconst isNewCaller = !callerName;\n\n// Pass through all upstream data + caller info\nconst upstream = $('Code in JavaScript').first().json;\nreturn [{\n  json: {\n    ...upstream,\n    callerName: callerName,\n    callerEmail: callerEmail,\n    isNewCaller: isNewCaller\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        2544
+      ],
+      "id": "c89a58ba-e914-4622-bc2e-6081a4ca187e",
+      "name": "Parse Caller Info"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT memory_key, memory_value FROM caller_memory\nWHERE caller_phone = '{{ $json.From || '' }}'\nAND memory_key IN ('name', 'email')\nORDER BY memory_key LIMIT 5;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1536,
+        3600
+      ],
+      "id": "d3b4348a-0e85-400a-aea0-2a13d8eb2db6",
+      "name": "Lookup Caller Name1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse caller memory for greeting (Growth)\nconst rows = $input.all() || [];\nlet callerName = '';\nlet callerEmail = '';\n\nfor (const row of rows) {\n  if (row.json.memory_key === 'name') callerName = row.json.memory_value || '';\n  if (row.json.memory_key === 'email') callerEmail = row.json.memory_value || '';\n}\n\nconst isNewCaller = !callerName;\nconst upstream = $('Code in JavaScript').first().json;\nreturn [{\n  json: {\n    ...upstream,\n    callerName: callerName,\n    callerEmail: callerEmail,\n    isNewCaller: isNewCaller\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        3600
+      ],
+      "id": "8938910f-29e7-4086-84b3-1e4d6939fd57",
+      "name": "Parse Caller Info1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Twilio Voice In": {
+      "main": [
+        [
+          {
+            "node": "Select customers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Select account_settings",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Has Speech?": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Lookup Caller Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Greeting TwiML": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Store Reply (Starter LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply TwiML": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Cache QNA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache QNA": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if FAQ Exists": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Store Reply (Starter FAQ)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply TwiML1": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Load Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Build Greeting TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Greeting TwiML1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Greeting TwiML2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Greeting TwiML1": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Greeting TwiML2": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Has Speech?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Speech?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Speech?1": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Lookup Caller Name1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Greeting TwiML3": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model1": {
+      "main": [
+        [
+          {
+            "node": "Store Reply (Growth LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply TwiML2": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Cache QNA1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache QNA1": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if FAQ Exists1": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Store Reply (Growth FAQ)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message a model1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply TwiML3": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Load Session1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Build Greeting TwiML3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Greeting TwiML4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Greeting TwiML5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Greeting TwiML4": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Greeting TwiML5": {
+      "main": [
+        [
+          {
+            "node": "Send TwiML Back9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select customers": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select account_settings": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Initialize Memory": {
+      "main": [
+        [
+          {
+            "node": "Check if FAQ Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Memory1": {
+      "main": [
+        [
+          {
+            "node": "Check if FAQ Exists1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Reply (Starter LLM)": {
+      "main": [
+        [
+          {
+            "node": "Build Reply TwiML1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Session LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Reply (Starter FAQ)": {
+      "main": [
+        [
+          {
+            "node": "Build Reply TwiML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Session FAQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Reply (Growth LLM)": {
+      "main": [
+        [
+          {
+            "node": "Build Reply TwiML3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Session1 LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Reply (Growth FAQ)": {
+      "main": [
+        [
+          {
+            "node": "Build Reply TwiML2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Session1 FAQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session": {
+      "main": [
+        [
+          {
+            "node": "Load Caller Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session1": {
+      "main": [
+        [
+          {
+            "node": "Load Caller Memory1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Caller Memory": {
+      "main": [
+        [
+          {
+            "node": "Initialize Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Caller Memory1": {
+      "main": [
+        [
+          {
+            "node": "Initialize Memory1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is After Hours?": {
+      "main": [
+        [
+          {
+            "node": "After Hours TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "After Hours TwiML": {
+      "main": [
+        [
+          {
+            "node": "Send After Hours TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Caller Name": {
+      "main": [
+        [
+          {
+            "node": "Parse Caller Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Caller Info": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Caller Name1": {
+      "main": [
+        [
+          {
+            "node": "Parse Caller Info1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Caller Info1": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "741487c9-0716-4bfb-b610-895671ed2b6c",
+  "meta": {
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "701iV8czaTjkyjmC",
+  "tags": []
+}

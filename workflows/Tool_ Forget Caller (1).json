@@ -1,0 +1,112 @@
+{
+  "name": "Tool: Forget Caller",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        336
+      ],
+      "id": "b4991ae7-fe5e-4960-87a7-737d3a82a3be",
+      "name": "Execute Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const phone = ($json.phone || '').replace(/'/g, \"''\");\n\nconst sql = \\`INSERT INTO caller_consent (caller_phone, forget_requested, forget_requested_at)\nVALUES ('\\${phone}', TRUE, NOW())\nON CONFLICT (caller_phone) DO UPDATE SET forget_requested = TRUE, forget_requested_at = NOW();\nDELETE FROM caller_memory WHERE caller_phone = '\\${phone}'\\`;\n\nreturn [{ json: { sql } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        336
+      ],
+      "id": "cbde10d0-f2e5-47d0-96ea-fc8bd112a285",
+      "name": "Build SQL"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        336
+      ],
+      "id": "4c789560-aeb9-4060-92d2-8fc1001ae816",
+      "name": "Execute Query",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { success: true, message: 'All caller data has been deleted.' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        336
+      ],
+      "id": "ca0d11cb-6a59-4055-a52c-0a8981e56b51",
+      "name": "Format Results"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Execute Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Query": {
+      "main": [
+        [
+          {
+            "node": "Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6f5815b0-4dde-4b9d-8ed4-b0feafe0b48d",
+  "meta": {
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "SjktLAuf8tdkh4tD",
+  "tags": []
+}

@@ -1,0 +1,1445 @@
+{
+  "name": "SMS Channel - PostgreSQL + HubSpot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "twilio-sms",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -4064,
+        1488
+      ],
+      "id": "5b791f77-b293-414f-884e-40c9d669481e",
+      "name": "Twilio SMS In",
+      "webhookId": "sms-inbound-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === NORMALIZE TWILIO SMS PAYLOAD ===\nconst body = $json.body || $json;\n\nconst phone = body.From || '';\nconst to = body.To || '';\nconst message = body.Body || '';\nconst messageSid = body.MessageSid || body.SmsSid || '';\nconst numMedia = parseInt(body.NumMedia || '0');\n\nconst mediaUrls = [];\nfor (let i = 0; i < numMedia; i++) {\n  const url = body['MediaUrl' + i];\n  if (url) mediaUrls.push(url);\n}\n\nconst crypto = require('crypto');\nconst idempotencyKey = crypto\n  .createHash('sha256')\n  .update('sms|' + phone + '|' + messageSid + '|' + message.slice(0, 50))\n  .digest('hex')\n  .slice(0, 32);\n\nreturn [{\n  json: {\n    idempotency_key: idempotencyKey,\n    channel: 'sms',\n    sender: phone,\n    recipient: to,\n    message: message,\n    media_urls: mediaUrls,\n    timestamp: new Date().toISOString(),\n    session_id: messageSid,\n    metadata: {\n      twilio_sid: messageSid,\n      num_media: numMedia,\n      from_city: body.FromCity || '',\n      from_state: body.FromState || ''\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3872,
+        1488
+      ],
+      "id": "fc54c5df-4e8e-44a0-8f0f-cff6a47c4de8",
+      "name": "Normalize Payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === IDEMPOTENCY CHECK ===\nconst store = $getWorkflowStaticData('global');\nconst key = $json.idempotency_key;\nconst now = Date.now();\n\nif (!store.processedMessages) store.processedMessages = {};\n\nconst CACHE_TTL = 5 * 60 * 1000;\nfor (const k of Object.keys(store.processedMessages)) {\n  if (now - store.processedMessages[k] > CACHE_TTL) {\n    delete store.processedMessages[k];\n  }\n}\n\nif (store.processedMessages[key]) {\n  return [{ json: { ...$json, is_duplicate: true } }];\n}\n\nstore.processedMessages[key] = now;\nreturn [{ json: { ...$json, is_duplicate: false } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3664,
+        1488
+      ],
+      "id": "8fdbcc6d-196a-4a76-816a-a1ab3bb68e38",
+      "name": "Idempotency Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dup-check",
+              "leftValue": "={{ $json.is_duplicate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3472,
+        1488
+      ],
+      "id": "e3b472aa-1d1d-4a40-8999-4453a25a0e30",
+      "name": "Is Duplicate?"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "list",
+          "cachedResultName": "opt_outs"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "phone",
+              "value": "={{ $json.sender }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3264,
+        1584
+      ],
+      "id": "c2b13ac0-30b3-4b95-971d-59f155a4904e",
+      "name": "Check Opt-Out DB",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === COMPLIANCE GUARDRAILS ===\nconst CONFIG = {\n  quietHours: {\n    enabled: true,\n    timezone: 'America/Chicago',\n    startHour: 21,\n    endHour: 8,\n    quietDays: [0, 6],\n  },\n  keywords: {\n    stop: ['stop', 'unsubscribe', 'cancel', 'opt out', 'opt-out', 'quit'],\n    help: ['help', 'info'],\n    start: ['start', 'subscribe', 'yes', 'unstop']\n  },\n  templates: {\n    stop: \"You've been unsubscribed from YourCompany messages. Reply START to resubscribe.\",\n    help: \"YourCompany Help: Reply STOP to unsubscribe. For support, visit 360dmmc.com or call us.\",\n    quietHours: null,\n    alreadyOptedOut: \"You are already unsubscribed. Reply START to resubscribe.\"\n  },\n  piiPatterns: [\n    { name: 'ssn', pattern: /\\b\\d{3}[-\\s]?\\d{2}[-\\s]?\\d{4}\\b/g, replacement: '[SSN REDACTED]' },\n    { name: 'credit_card', pattern: /\\b\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}\\b/g, replacement: '[CARD REDACTED]' },\n  ],\n};\n\nfunction isQuietHours(config) {\n  if (!config.enabled) return false;\n  const now = new Date();\n  const options = { timeZone: config.timezone, hour: 'numeric', weekday: 'short' };\n  const formatter = new Intl.DateTimeFormat('en-US', options);\n  const parts = formatter.formatToParts(now);\n  const hour = parseInt(parts.find(p => p.type === 'hour').value);\n  const dayName = parts.find(p => p.type === 'weekday').value;\n  const dayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };\n  const dayNum = dayMap[dayName];\n  \n  if (config.quietDays.includes(dayNum)) return true;\n  if (config.startHour > config.endHour) {\n    return hour >= config.startHour || hour < config.endHour;\n  }\n  return hour >= config.startHour && hour < config.endHour;\n}\n\nfunction checkKeywords(message, keywords) {\n  const lower = message.toLowerCase().trim();\n  for (const kw of keywords.stop) {\n    if (lower === kw || lower.startsWith(kw + ' ')) return { type: 'stop', matched: kw };\n  }\n  for (const kw of keywords.start) {\n    if (lower === kw || lower.startsWith(kw + ' ')) return { type: 'start', matched: kw };\n  }\n  for (const kw of keywords.help) {\n    if (lower === kw || lower.startsWith(kw + ' ')) return { type: 'help', matched: kw };\n  }\n  return null;\n}\n\nfunction maskPII(text, patterns) {\n  let masked = text;\n  const found = [];\n  for (const { name, pattern, replacement } of patterns) {\n    const matches = masked.match(pattern);\n    if (matches) {\n      found.push({ type: name, count: matches.length });\n      masked = masked.replace(pattern, replacement);\n    }\n  }\n  return { masked, piiFound: found };\n}\n\nconst prevData = $('Idempotency Check').first().json;\nconst phone = prevData.sender || '';\nconst message = prevData.message || '';\nconst channel = prevData.channel || 'sms';\n\nconst optOutRecords = $('Check Opt-Out DB').all();\nconst isAlreadyOptedOut = optOutRecords.length > 0 && optOutRecords.some(r => r.json.phone);\n\nconst result = {\n  allowed: true,\n  reason: null,\n  response_override: null,\n  masked_message: message,\n  opt_out_action: null,\n  is_resubscribe: false\n};\n\nconst keywordMatch = checkKeywords(message, CONFIG.keywords);\n\nif (keywordMatch) {\n  if (keywordMatch.type === 'stop') {\n    result.allowed = false;\n    result.reason = 'opt_out';\n    if (isAlreadyOptedOut) {\n      result.response_override = CONFIG.templates.alreadyOptedOut;\n    } else {\n      result.response_override = CONFIG.templates.stop;\n      result.opt_out_action = 'add';\n    }\n  } else if (keywordMatch.type === 'start') {\n    if (isAlreadyOptedOut) {\n      result.opt_out_action = 'remove';\n      result.is_resubscribe = true;\n      result.response_override = \"Welcome back! You're now subscribed to YourCompany messages.\";\n      result.allowed = false;\n      result.reason = 'resubscribe';\n    }\n  } else if (keywordMatch.type === 'help') {\n    result.allowed = false;\n    result.reason = 'help_request';\n    result.response_override = CONFIG.templates.help;\n  }\n}\n\nif (result.allowed && isAlreadyOptedOut) {\n  result.allowed = false;\n  result.reason = 'opted_out';\n  result.response_override = null;\n}\n\nif (result.allowed && isQuietHours(CONFIG.quietHours)) {\n  result.allowed = false;\n  result.reason = 'quiet_hours';\n  result.response_override = CONFIG.templates.quietHours;\n}\n\nconst { masked, piiFound } = maskPII(message, CONFIG.piiPatterns);\nresult.masked_message = masked;\n\nreturn [{\n  json: {\n    ...prevData,\n    compliance: result,\n    allowed: result.allowed,\n    blocked_reason: result.reason,\n    response_override: result.response_override,\n    masked_message: result.masked_message,\n    opt_out_action: result.opt_out_action,\n    is_resubscribe: result.is_resubscribe\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3056,
+        1584
+      ],
+      "id": "a8710221-7c4d-4a45-b536-246619677b99",
+      "name": "Compliance Guardrails"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "allowed-check",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2864,
+        1584
+      ],
+      "id": "491851bb-6df2-4bc6-b516-278568edfc6d",
+      "name": "Compliance Allowed?"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "customers",
+          "mode": "list",
+          "cachedResultName": "customers"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "phone",
+              "value": "={{ $json.sender }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2608,
+        1488
+      ],
+      "id": "50d03479-a57f-46fa-85bc-a6da0fa8bbf2",
+      "name": "Lookup Customer",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT memory_key, memory_value, updated_at FROM caller_memory WHERE caller_phone = '{{ $('Compliance Guardrails').first().json.sender }}' ORDER BY updated_at DESC LIMIT 20;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2592,
+        1232
+      ],
+      "id": "5464c080-91be-4f9d-8d4f-6e6eb93e265c",
+      "name": "Load SMS Caller Memory",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === INITIALIZE SMS MEMORY ===\nconst store = $getWorkflowStaticData('global');\nconst prevData = $('Compliance Guardrails').first().json;\nconst phone = prevData.sender || '';\nconst message = prevData.message;\n\nconst customerResults = $('Lookup Customer').all();\nconst customer = customerResults.length > 0 ? customerResults[0].json : {};\n\nif (!store.smsConversations) store.smsConversations = {};\n\nif (!store.smsConversations[phone]) {\n  store.smsConversations[phone] = {\n    history: [],\n    startTime: new Date().toISOString(),\n    customer_id: customer.customer_id || null,\n    customer_name: customer.name || 'Guest',\n    tier: customer.tier || 'starter'\n  };\n}\n\nif (message && message.trim()) {\n  store.smsConversations[phone].history.push({\n    role: 'user',\n    content: message.trim(),\n    timestamp: new Date().toISOString()\n  });\n}\n\nconst MAX_TURNS = 10;\nif (store.smsConversations[phone].history.length > MAX_TURNS) {\n  store.smsConversations[phone].history = \n    store.smsConversations[phone].history.slice(-MAX_TURNS);\n}\n\nconst historyForPrompt = store.smsConversations[phone].history\n  .slice(0, -1)\n  .map(turn => turn.role.toUpperCase() + ': ' + turn.content)\n  .join('\\n');\n\n// --- LONG-TERM: Load caller facts from caller_memory ---\nconst memoryRows = $('Load SMS Caller Memory').all() || [];\nlet callerContext = '';\n\nconst facts = memoryRows\n  .filter(r => r.json && r.json.memory_key && r.json.memory_value)\n  .map(r => `${r.json.memory_key}: ${r.json.memory_value}`);\n\nif (facts.length > 0) {\n  callerContext = 'Known info about this person:\\n' + facts.join('\\n');\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    customer_id: customer.customer_id || null,\n    customer_name: customer.name || 'Guest',\n    tier: customer.tier || 'starter',\n    historyForPrompt: historyForPrompt || 'New conversation.',\n    callerContext: callerContext,\n    conversationHistory: store.smsConversations[phone].history\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2416,
+        1488
+      ],
+      "id": "af13ee4f-3c96-4773-8ffb-daa0b24b96dc",
+      "name": "Initialize Memory"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-4-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are the YourCompany SMS Assistant — a professional, warm, and friendly customer-service representative.\n\nYour job:\n• Answer questions, guide potential clients, and help with basic support requests.\n• Keep responses SHORT and suitable for SMS (under 160 characters when possible, max 320).\n• Use natural language, no markdown or formatting.\n• Never say you are an AI.\n\nAbout YourCompany:\nWe help businesses with AI technology and digital transformation - automation, marketing, customer experience, and data analytics.\n\nCommon responses:\n• Services: \"We offer AI automation, digital marketing, CX design, and data analytics. Want details on any of these?\"\n• Pricing: \"Pricing depends on your needs. Want to schedule a free consultation? Reply YES.\"\n• Website: \"Visit us at 360dmmc.com\"\n• Appointment: \"Book a meeting at outlook.office.com/book/360dmmc\"\n\n## CONVERSATION HISTORY:\n{{ $json.historyForPrompt }}\n\nKeep it brief. One question at a time. Be helpful.",
+              "role": "system"
+            },
+            {
+              "content": "={{ ($json.callerContext ? $json.callerContext + '\\n\\n' : '') + $json.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -2208,
+        1488
+      ],
+      "id": "75194ebf-f310-4616-845c-886bee61d9c6",
+      "name": "GPT Brain",
+      "credentials": {
+        "openAiApi": {
+          "id": "XIfko2o0mrpebRfj",
+          "name": "OpenAi account POD2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === STORE ASSISTANT REPLY ===\nconst store = $getWorkflowStaticData('global');\nconst prevData = $('Initialize Memory').first().json;\nconst phone = prevData.sender;\n\nconst assistantReply = \n  $json?.choices?.[0]?.message?.content ||\n  $json?.message?.content ||\n  'Sorry, I could not process your request.';\n\nif (store.smsConversations?.[phone]) {\n  store.smsConversations[phone].history.push({\n    role: 'assistant',\n    content: assistantReply,\n    timestamp: new Date().toISOString()\n  });\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    assistantReply: assistantReply\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1952,
+        1488
+      ],
+      "id": "5f280090-d305-493a-99c7-85641a228221",
+      "name": "Store Reply"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $vars.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.sender }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $json.recipient }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.assistantReply }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1648,
+        1504
+      ],
+      "id": "1bfa05d5-302a-4b97-8b1a-caba2f31d54c",
+      "name": "Send SMS Reply",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "JeyDot4SjdGzw7Qm",
+          "name": "Twilio API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "analytics_events",
+          "mode": "list",
+          "cachedResultName": "analytics_events"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_type": "sms_conversation",
+            "channel": "sms",
+            "customer_phone": "={{ $('Initialize Memory').first().json.sender }}",
+            "session_id": "={{ $('Normalize Payload').first().json.session_id }}",
+            "event_data": "={{ JSON.stringify({ message_length: $('Initialize Memory').first().json.message.length, response_length: $json.assistantReply?.length || 0 }) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "customer_phone",
+              "displayName": "customer_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "event_data",
+              "displayName": "event_data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1280,
+        1552
+      ],
+      "id": "cbf44f36-11fc-414c-8d3d-7f0ce47f72d8",
+      "name": "Log to Analytics",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "search",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -1616,
+        1296
+      ],
+      "id": "02179bda-bd48-41e1-ae45-2b464bcc54b7",
+      "name": "HubSpot Search",
+      "alwaysOutputData": true,
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "y1Rj0CdqWnXv8cfH",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hs-exists",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1408,
+        1296
+      ],
+      "id": "561d86e7-b066-4347-81bb-1bdf4b63c242",
+      "name": "HubSpot Contact Exists?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $json.results || [];\nconst contactId = results[0]?.id || null;\nconst storeData = $('Store Reply').first().json;\n\nreturn [{\n  json: {\n    hubspot_contact_id: contactId,\n    sender: storeData.sender,\n    message: storeData.message,\n    assistantReply: storeData.assistantReply,\n    session_id: $('Normalize Payload').first().json.session_id\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        1184
+      ],
+      "id": "7c2fb13b-d3ac-4886-bb0d-154d00f7600f",
+      "name": "Get HubSpot ID"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "Hubspot@360dmmc.com",
+        "additionalFields": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        1392
+      ],
+      "id": "380b5f62-c425-4958-85a1-f35f2b960c77",
+      "name": "HubSpot Create",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "y1Rj0CdqWnXv8cfH",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const contactId = $json.id || null;\nconst storeData = $('Store Reply').first().json;\n\nreturn [{\n  json: {\n    hubspot_contact_id: contactId,\n    sender: storeData.sender,\n    message: storeData.message,\n    assistantReply: storeData.assistantReply,\n    session_id: $('Normalize Payload').first().json.session_id\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1008,
+        1392
+      ],
+      "id": "7307ff20-3de3-4bf0-ac09-c3b62ae8db99",
+      "name": "Set New HubSpot ID"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -880,
+        1264
+      ],
+      "id": "6d702139-215b-42d2-a234-3f2801f6a807",
+      "name": "Merge HubSpot"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "engagement",
+        "type": "task",
+        "metadata": {},
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ $json.hubspot_contact_id }}"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        1264
+      ],
+      "id": "b7417661-41f3-4c06-bf42-46ede0fbf21f",
+      "name": "HubSpot Note",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "y1Rj0CdqWnXv8cfH",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -992,
+        1552
+      ],
+      "id": "8a1ef02b-4cfa-4f03-bf45-11f1a72fa320",
+      "name": "Acknowledge Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -3264,
+        1392
+      ],
+      "id": "50fb9750-8b5b-4540-8528-4af4f5ebb5cf",
+      "name": "Skip Duplicate"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-override",
+              "leftValue": "={{ $json.response_override }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2608,
+        1872
+      ],
+      "id": "7b5a0f43-6cf9-41cd-afc2-89d65b73790d",
+      "name": "Has Override?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $vars.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.sender }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $json.recipient }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.response_override }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2352,
+        1824
+      ],
+      "id": "27213bce-bcc7-4d90-94c8-720fa3eb6887",
+      "name": "Send Compliance SMS",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "JeyDot4SjdGzw7Qm",
+          "name": "Twilio API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "add-optout",
+              "leftValue": "={{ $json.opt_out_action }}",
+              "rightValue": "add",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2160,
+        1824
+      ],
+      "id": "b1a7f9da-9b9f-4d38-bff5-daa44b251bfe",
+      "name": "Is Add Opt-Out?"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "list",
+          "cachedResultName": "opt_outs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $json.sender }}",
+            "channel": "sms",
+            "reason": "user_stop"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1952,
+        1776
+      ],
+      "id": "da8c2f80-0348-45e0-b65d-9255e2ff71e7",
+      "name": "Insert Opt-Out",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "remove-optout",
+              "leftValue": "={{ $json.opt_out_action }}",
+              "rightValue": "remove",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1968,
+        2048
+      ],
+      "id": "0dd8a9ed-0bda-482d-ba40-dbbf0a4b2b65",
+      "name": "Is Remove Opt-Out?"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "list",
+          "cachedResultName": "opt_outs"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1792,
+        1888
+      ],
+      "id": "f69e87e9-2656-4bcf-a7a0-ea9f99ff2cc3",
+      "name": "Delete Opt-Out",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "analytics_events",
+          "mode": "list",
+          "cachedResultName": "analytics_events"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_type": "={{ $('Compliance Guardrails').first().json.blocked_reason }}",
+            "channel": "sms",
+            "customer_phone": "={{ $('Compliance Guardrails').first().json.sender }}",
+            "session_id": "={{ $('Normalize Payload').first().json.session_id }}",
+            "event_data": "={{ JSON.stringify({ reason: $('Compliance Guardrails').first().json.blocked_reason }) }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1328,
+        1824
+      ],
+      "id": "a415853c-354b-4db9-a337-b361c6429c68",
+      "name": "Log Compliance Event",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1088,
+        1856
+      ],
+      "id": "cbc45f5c-07f1-401b-bbb0-d973fe64004f",
+      "name": "Compliance Acknowledge"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2352,
+        2016
+      ],
+      "id": "5df09d32-22b4-44b6-a966-0cbd71b43d9f",
+      "name": "Silent Block"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-4-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You extract key facts about a person from an SMS conversation. Return ONLY a valid JSON object with facts you can identify.\n\nAvailable keys:\n- name: person's name (even first name only)\n- company: their company or organization\n- role: job title or role\n- interest: what service/product they asked about\n- last_topic: brief summary of main topic discussed (always include if any conversation happened)\n- email: if they mentioned an email\n- sentiment: \"positive\", \"neutral\", or \"negative\"\n\nRules:\n- ALWAYS extract a name if they introduced themselves\n- ALWAYS include last_topic if any conversation happened\n- ALWAYS include sentiment\n- Only omit keys where there is truly zero information\n- If no useful content, return {}\n\nReturn ONLY the JSON object. No explanation, no markdown, no backticks.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'SMS from: ' + $('Initialize Memory').first().json.sender + '\\n\\nUSER: ' + $('Initialize Memory').first().json.message + '\\n\\nASSISTANT: ' + $json.assistantReply }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -1696,
+        1008
+      ],
+      "id": "d1c84cfc-a7f4-498b-8589-982963948f28",
+      "name": "Extract SMS Facts",
+      "credentials": {
+        "openAiApi": {
+          "id": "XIfko2o0mrpebRfj",
+          "name": "OpenAi account POD2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === BUILD SMS CALLER MEMORY UPSERTS ===\nconst initData = $('Initialize Memory').first().json;\nconst callerPhone = initData.sender || '';\n\nif (!callerPhone) {\n  return [{ json: { skip: true, reason: 'no caller phone' } }];\n}\n\nlet facts = {};\nconst raw = $json?.choices?.[0]?.message?.content\n  || $json?.message?.content || '{}';\n\ntry {\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  facts = JSON.parse(cleaned);\n} catch (e) {\n  return [{ json: { skip: true, reason: 'parse error', raw: raw } }];\n}\n\nif (Object.keys(facts).length === 0) {\n  return [{ json: { skip: true, reason: 'no facts extracted' } }];\n}\n\nconst SAFE_KEYS = ['has_called_before','preferred_language','service_interest',\n  'communication_preference','call_count','last_topic','sentiment',\n  'callback_requested','channel_preference','preferred_contact_time','timezone',\n  'interest','role','company'];\n\nconst expiryDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();\n\nconst values = Object.entries(facts)\n  .filter(([k, v]) => v && String(v).trim())\n  .map(([k, v]) => {\n    const safeKey = String(k).replace(/'/g, \"''\").slice(0, 50);\n    const safeVal = String(v).replace(/'/g, \"''\").slice(0, 500);\n    const tier = SAFE_KEYS.includes(k) ? 'safe' : 'protected';\n    return \"('\" + callerPhone.replace(/'/g, \"''\") + \"', '\" +\n      safeKey + \"', '\" + safeVal + \"', 'sms', '\" +\n      tier + \"', '\" + expiryDate + \"', NOW(), NOW())\";\n  });\n\nif (values.length === 0) {\n  return [{ json: { skip: true, reason: 'no valid facts' } }];\n}\n\nconst query = 'INSERT INTO caller_memory (caller_phone, memory_key, memory_value, source_channel, privacy_tier, expires_at, created_at, updated_at) VALUES ' +\n  values.join(',\\n') +\n  ' ON CONFLICT (caller_phone, memory_key) DO UPDATE SET ' +\n  'memory_value = EXCLUDED.memory_value, privacy_tier = EXCLUDED.privacy_tier, ' +\n  'source_channel = EXCLUDED.source_channel, expires_at = EXCLUDED.expires_at, updated_at = NOW();';\n\nreturn [{ json: { query: query, factCount: values.length, callerPhone: callerPhone, skip: false } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        960
+      ],
+      "id": "88e1e811-6486-49a1-86f7-9108642f45a2",
+      "name": "Build SMS Memory Upsert"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sms-has-facts",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1040,
+        944
+      ],
+      "id": "74f3549a-4639-45b4-8535-f4f0c3ed5255",
+      "name": "SMS Has Facts?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.query }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -704,
+        928
+      ],
+      "id": "c6a826fb-d9ff-41fe-9169-9ff8bc630a91",
+      "name": "Save SMS Caller Memory",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Twilio SMS In": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Idempotency Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Idempotency Check": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Skip Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Opt-Out DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Opt-Out DB": {
+      "main": [
+        [
+          {
+            "node": "Compliance Guardrails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Guardrails": {
+      "main": [
+        [
+          {
+            "node": "Compliance Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Customer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load SMS Caller Memory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Override?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Customer": {
+      "main": [
+        [
+          {
+            "node": "Initialize Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load SMS Caller Memory": {
+      "main": [
+        [
+          {
+            "node": "Initialize Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Memory": {
+      "main": [
+        [
+          {
+            "node": "GPT Brain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Brain": {
+      "main": [
+        [
+          {
+            "node": "Store Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Reply": {
+      "main": [
+        [
+          {
+            "node": "Send SMS Reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HubSpot Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract SMS Facts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS Reply": {
+      "main": [
+        [
+          {
+            "node": "Log to Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Analytics": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Search": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Contact Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Contact Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get HubSpot ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot Create",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get HubSpot ID": {
+      "main": [
+        [
+          {
+            "node": "Merge HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Create": {
+      "main": [
+        [
+          {
+            "node": "Set New HubSpot ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set New HubSpot ID": {
+      "main": [
+        [
+          {
+            "node": "Merge HubSpot",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge HubSpot": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract SMS Facts": {
+      "main": [
+        [
+          {
+            "node": "Build SMS Memory Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SMS Memory Upsert": {
+      "main": [
+        [
+          {
+            "node": "SMS Has Facts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMS Has Facts?": {
+      "main": [
+        [
+          {
+            "node": "Save SMS Caller Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Override?": {
+      "main": [
+        [
+          {
+            "node": "Send Compliance SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Silent Block",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Compliance SMS": {
+      "main": [
+        [
+          {
+            "node": "Is Add Opt-Out?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Add Opt-Out?": {
+      "main": [
+        [
+          {
+            "node": "Insert Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Remove Opt-Out?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Log Compliance Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Remove Opt-Out?": {
+      "main": [
+        [
+          {
+            "node": "Delete Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Compliance Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Log Compliance Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Compliance Event": {
+      "main": [
+        [
+          {
+            "node": "Compliance Acknowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "45d96007-62ac-4efd-95fe-cb58a57e277c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "o0Si0iKnH4Cmg1ye",
+  "tags": []
+}

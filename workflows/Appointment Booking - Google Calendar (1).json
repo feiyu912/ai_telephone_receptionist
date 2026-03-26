@@ -1,0 +1,1209 @@
+{
+  "name": "Appointment Booking - Google Calendar",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-booking",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2112,
+        80
+      ],
+      "id": "37c9906f-63ca-4aa5-9c73-9a21c176a96d",
+      "name": "Booking Entry",
+      "webhookId": "appointment-booking"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract params from POST body or query string\nconst body = $json.body || {};\nconst query = $json.query || {};\n\nconst callSid = body.CallSid || body.callSid || query.callSid || '';\nconst callerPhone = body.From || body.callerPhone || query.callerPhone || '';\nconst calledNumber = body.To || body.calledNumber || query.calledNumber || '';\n\n// FIX: Capture SpeechResult so the no-slots retry loop\n// passes the caller's NEW utterance to GPT context\nconst speechResult = body.SpeechResult || query.SpeechResult || '';\n\nif (!callSid) {\n  return [{ json: { error: 'No callSid provided', callSid, callerPhone, calledNumber, speechResult } }];\n}\n\nreturn [{ json: { callSid, callerPhone, calledNumber, speechResult } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1904,
+        80
+      ],
+      "id": "28b94352-808d-4935-88ff-d68d5f43114b",
+      "name": "Extract Params"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT conversation_history, booking_context FROM voice_sessions WHERE call_sid = '{{ $json.callSid }}' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1680,
+        80
+      ],
+      "id": "c1674b4c-3e3f-425d-b006-c20f0573f4b1",
+      "name": "Load Session",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM account_settings LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1680,
+        272
+      ],
+      "id": "8a55ab58-91de-4d3c-a000-caba162c23d8",
+      "name": "Load Account Settings",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        -1456,
+        160
+      ],
+      "id": "0f00d94a-ff29-4dfe-affa-4656ad877584",
+      "name": "Merge Session + Settings"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build context for GPT to extract booking details\nconst params = $('Extract Params').first().json;\nconst sessionData = $('Load Session').first()?.json || {};\nconst settings = $('Load Account Settings').first()?.json || {};\n\nlet history = [];\ntry {\n  history = typeof sessionData.conversation_history === 'string'\n    ? JSON.parse(sessionData.conversation_history)\n    : (sessionData.conversation_history || []);\n} catch(e) { history = []; }\n\nconst recentHistory = history.slice(-10)\n  .map(m => m.role.toUpperCase() + ': ' + m.content)\n  .join('\\n');\n\n// FIX: Append caller's new speech so GPT sees the latest request\nlet fullContext = recentHistory;\nif (params.speechResult && params.speechResult.trim()) {\n  fullContext += '\\nCALLER: ' + params.speechResult.trim();\n}\n\nconst now = new Date();\nconst tz = settings.timezone || 'America/Chicago';\nconst today = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst dayOfWeek = now.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' });\n\nconst selectedVoice = settings.selected_voice || 'Polly.Matthew-Neural';\nconst isPolly = selectedVoice.startsWith('Polly.');\nconst calendarId = settings.google_calendar_id || 'primary';\nconst duration = settings.booking_duration_minutes || 60;\nconst buffer = settings.booking_buffer_minutes || 15;\n\nreturn [{\n  json: {\n    callSid: params.callSid,\n    callerPhone: params.callerPhone,\n    calledNumber: params.calledNumber,\n    recentHistory: fullContext,\n    today,\n    dayOfWeek,\n    selectedVoice,\n    isPolly,\n    calendarId,\n    duration,\n    buffer,\n    timezone: tz\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1232,
+        160
+      ],
+      "id": "48bb1f8c-467e-4324-8f0e-4c7c5b7e2177",
+      "name": "Prepare Booking Context"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-4-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Today is {{ $json.dayOfWeek }}, {{ $json.today }}.\n\nConversation:\n{{ $json.recentHistory }}\n\nExtract the booking details:"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 300,
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -1024,
+        160
+      ],
+      "id": "1ebac309-810b-4d65-b0a3-70d097a8b744",
+      "name": "Extract Booking Details",
+      "credentials": {
+        "openAiApi": {
+          "id": "XIfko2o0mrpebRfj",
+          "name": "OpenAi account POD2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse GPT response and resolve time ranges for Free/Busy query\nconst upstream = $('Prepare Booking Context').first().json;\nlet raw = $json?.choices?.[0]?.message?.content || $json?.message?.content || '{}';\n\nraw = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nlet details;\ntry {\n  details = JSON.parse(raw);\n} catch(e) {\n  details = {};\n  const dateMatch = raw.match(/(\\d{4}-\\d{2}-\\d{2})/);\n  if (dateMatch) details.date = dateMatch[1];\n\n  const timeMatch = raw.match(/(\\d{1,2}:\\d{2}\\s*(?:AM|PM|am|pm)?)/);\n  if (timeMatch) {\n    details.time_preference = timeMatch[1].trim();\n  }\n\n  if (!details.time_preference) {\n    const lower = raw.toLowerCase();\n    if (lower.includes('morning')) details.time_preference = 'morning';\n    else if (lower.includes('afternoon')) details.time_preference = 'afternoon';\n    else if (lower.includes('evening')) details.time_preference = 'evening';\n  }\n  details.service_type = 'general';\n  details.notes = '';\n}\n\nconst date = details.date || upstream.today;\nlet timePref = details.time_preference || 'afternoon';\nconst duration = upstream.duration || 60;\nconst buffer = upstream.buffer || 15;\nconst tz = upstream.timezone || 'America/Chicago';\n\n// FIX: Normalize any time value to 24-hour format\nfunction to24h(t) {\n  if (!t || typeof t !== 'string') return t;\n  t = t.trim();\n  if (/^(morning|afternoon|evening)$/i.test(t)) return t.toLowerCase();\n\n  const ampmMatch = t.match(/^(\\d{1,2})(?::(\\d{2}))?\\s*(AM|PM|am|pm)$/);\n  if (ampmMatch) {\n    let h = parseInt(ampmMatch[1]);\n    const m = parseInt(ampmMatch[2] || '0');\n    const period = ampmMatch[3].toUpperCase();\n    if (period === 'PM' && h < 12) h += 12;\n    if (period === 'AM' && h === 12) h = 0;\n    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');\n  }\n\n  const bareHourMatch = t.match(/^(\\d{1,2})$/);\n  if (bareHourMatch) {\n    let h = parseInt(bareHourMatch[1]);\n    if (h >= 1 && h <= 7) h += 12;\n    return String(h).padStart(2, '0') + ':00';\n  }\n\n  const plainMatch = t.match(/^(\\d{1,2}):(\\d{2})$/);\n  if (plainMatch) {\n    let h = parseInt(plainMatch[1]);\n    const m = parseInt(plainMatch[2]);\n    if (h >= 1 && h <= 7) h += 12;\n    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');\n  }\n  return t;\n}\n\ntimePref = to24h(timePref);\n\nlet startHour, endHour;\nif (/^\\d{1,2}:\\d{2}$/.test(timePref) || /^\\d{1,2}$/.test(timePref)) {\n  const hour = parseInt(timePref.split(':')[0]);\n  startHour = Math.max(8, hour - 2);\n  endHour = Math.min(20, hour + 2);\n} else if (timePref === 'morning') {\n  startHour = 8; endHour = 12;\n} else if (timePref === 'afternoon') {\n  startHour = 12; endHour = 17;\n} else if (timePref === 'evening') {\n  startHour = 17; endHour = 20;\n} else {\n  startHour = 9; endHour = 17;\n}\n\nconst timeMin = date + 'T' + String(startHour).padStart(2,'0') + ':00:00';\nconst timeMax = date + 'T' + String(endHour).padStart(2,'0') + ':00:00';\n\nreturn [{ json: {\n  ...upstream,\n  bookingDate: date,\n  timePref,\n  serviceType: details.service_type || 'general',\n  bookingNotes: details.notes || '',\n  startHour,\n  endHour,\n  timeMin,\n  timeMax,\n  parseError: false\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        160
+      ],
+      "id": "cffef5f4-849a-4635-8790-886fa27ae0ad",
+      "name": "Parse Booking Details"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "xkc912@gmail.com",
+          "mode": "list",
+          "cachedResultName": "xkc912@gmail.com"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -352,
+        64
+      ],
+      "id": "eff3227c-9f59-41fe-8d7a-80a49c069da4",
+      "name": "Google FreeBusy Check",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "Iw4KfKHczi4CAX8T",
+          "name": "Google Calendar OAuth2 API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build available slots from Google Calendar events response\nconst upstream = $('Parse Booking Details').first().json;\n\n// Native Google Calendar getAll returns an array of event items\n// Each item has: start.dateTime, end.dateTime, summary, etc.\n// We need to convert these into busy periods\nconst calendarId = upstream.calendarId || 'primary';\nconst date = upstream.bookingDate;\nconst duration = upstream.duration || 60;\nconst buffer = upstream.buffer || 15;\nconst startHour = upstream.startHour;\nconst endHour = upstream.endHour;\nconst tz = upstream.timezone || 'America/Chicago';\nconst timePref = upstream.timePref || '';\n\n// Build busy periods from calendar events\nlet busyPeriods = [];\ntry {\n  // $input.all() gets all items from the previous node\n  const events = $input.all().map(item => item.json);\n  busyPeriods = events\n    .filter(e => e.start && (e.start.dateTime || e.start.date))\n    .map(e => ({\n      start: new Date(e.start.dateTime || e.start.date).getTime(),\n      end: new Date(e.end.dateTime || e.end.date).getTime()\n    }));\n} catch(e) {\n  busyPeriods = [];\n}\n\n// Generate candidate slots in the time range\nconst slotDuration = duration * 60 * 1000;\nconst slotBuffer = buffer * 60 * 1000;\nconst step = 30 * 60 * 1000;\n\nconst slots = [];\nconst rangeStart = new Date(date + 'T' + String(startHour).padStart(2,'0') + ':00:00Z').getTime();\nconst rangeEnd = new Date(date + 'T' + String(endHour).padStart(2,'0') + ':00:00Z').getTime();\n\nfor (let t = rangeStart; t + slotDuration <= rangeEnd; t += step) {\n  const slotEnd = t + slotDuration;\n  \n  const isBusy = busyPeriods.some(bp => {\n    const bpStart = bp.start - slotBuffer;\n    const bpEnd = bp.end + slotBuffer;\n    return (t < bpEnd && slotEnd > bpStart);\n  });\n  \n  if (!isBusy) {\n    const startDate = new Date(t);\n    const endDate = new Date(slotEnd);\n    \n    let hours = startDate.getUTCHours();\n    let minutes = startDate.getUTCMinutes();\n    const ampm = hours >= 12 ? 'PM' : 'AM';\n    const displayHour = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);\n    const displayMin = minutes > 0 ? ':' + String(minutes).padStart(2,'0') : '';\n    const label = displayHour + displayMin + ' ' + ampm;\n    \n    slots.push({\n      start: startDate.toISOString(),\n      end: endDate.toISOString(),\n      label: label,\n      startHour: hours,\n      startMinute: minutes\n    });\n  }\n}\n\n// Check if the caller's exact requested time matches an available slot\nlet exactMatch = null;\n\nif (/^\\d{1,2}:\\d{2}$/.test(timePref)) {\n  const prefHour = parseInt(timePref.split(':')[0]);\n  const prefMin = parseInt(timePref.split(':')[1]);\n  \n  for (let i = 0; i < slots.length; i++) {\n    if (slots[i].startHour === prefHour && slots[i].startMinute === prefMin) {\n      exactMatch = slots[i];\n      break;\n    }\n  }\n  \n  if (!exactMatch) {\n    for (let i = 0; i < slots.length; i++) {\n      if (slots[i].startHour === prefHour && Math.abs(slots[i].startMinute - prefMin) <= 30) {\n        exactMatch = slots[i];\n        break;\n      }\n    }\n  }\n}\n\nlet selectedSlots;\nlet isExactMatch = false;\n\nif (exactMatch) {\n  selectedSlots = [exactMatch];\n  isExactMatch = true;\n} else {\n  selectedSlots = slots;\n  if (slots.length > 4) {\n    const interval = Math.floor(slots.length / 4);\n    selectedSlots = [slots[0], slots[interval], slots[interval*2], slots[slots.length-1]];\n  }\n}\n\nlet spokenSlots = '';\nif (selectedSlots.length === 0) {\n  spokenSlots = '';\n} else if (selectedSlots.length === 1) {\n  spokenSlots = selectedSlots[0].label;\n} else {\n  const labels = selectedSlots.map(s => s.label);\n  spokenSlots = labels.slice(0, -1).join(', ') + ', and ' + labels[labels.length - 1];\n}\n\nconst dateObj = new Date(date + 'T12:00:00Z');\nconst dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];\nconst monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];\nconst spokenDate = dayNames[dateObj.getUTCDay()] + ' ' + monthNames[dateObj.getUTCMonth()] + ' ' + dateObj.getUTCDate();\n\nreturn [{ json: {\n  ...upstream,\n  slots: selectedSlots,\n  slotCount: selectedSlots.length,\n  spokenSlots,\n  spokenDate,\n  hasSlots: selectedSlots.length > 0,\n  isExactMatch,\n  calendarError: false\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        64
+      ],
+      "id": "37ac68de-4aaa-473b-b777-f53c16a4c2e9",
+      "name": "Build Available Slots"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-slots",
+              "leftValue": "={{ $json.hasSlots }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        64
+      ],
+      "id": "47bebc87-5325-4252-a129-6274e55dad43",
+      "name": "Has Slots?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build TwiML to present available slots or confirm exact match\nconst d = $json;\nconst voice = d.selectedVoice || 'Polly.Matthew-Neural';\nconst isPolly = voice.startsWith('Polly.');\nconst count = d.slotCount;\n\nlet message;\nif (d.isExactMatch && count === 1) {\n  // Caller's exact requested time is available — ask yes/no\n  message = d.spokenDate + ' at ' + d.spokenSlots + ' is available. Shall I book that for you?';\n} else if (count === 1) {\n  // Only one slot open, but not an exact match\n  message = 'The closest available time on ' + d.spokenDate + ' is ' + d.spokenSlots + '. Would that work for you?';\n} else {\n  // Multiple slots — list them\n  message = 'I have ' + count + ' openings on ' + d.spokenDate + ': ' + d.spokenSlots + '. Which time works best for you?';\n}\n\nconst confirmUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/appointment-confirm';\n\nconst fallbackMsg = \"I didn't catch your preference. Let me take note of your preferred time and someone will confirm by text.\";\nconst returnUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1';\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + confirmUrl + '\" method=\"POST\">' +\n      '<Say voice=\"' + voice + '\">' + message + '</Say>' +\n    '</Gather>' +\n    '<Say voice=\"' + voice + '\">' + fallbackMsg + '</Say>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(message) + '&amp;voice_id=' + voice;\n  const fallbackAudioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(fallbackMsg) + '&amp;voice_id=' + voice;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + confirmUrl + '\" method=\"POST\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Play>' + fallbackAudioUrl + '</Play>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n}\n\n// Save booking context for confirmation step\nconst bookingContext = JSON.stringify({\n  state: d.isExactMatch ? 'awaiting_confirmation' : 'awaiting_selection',\n  date: d.bookingDate,\n  spokenDate: d.spokenDate,\n  slots: d.slots,\n  isExactMatch: d.isExactMatch || false,\n  serviceType: d.serviceType,\n  notes: d.bookingNotes\n}).replace(/'/g, \"''\");\n\nreturn [{ json: { twiml, bookingContext, callSid: d.callSid } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        -48
+      ],
+      "id": "ea187899-73a3-4b07-823b-c9df74265b21",
+      "name": "Build Slots TwiML"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE voice_sessions SET \n  booking_context = '{{ $json.bookingContext }}'::jsonb,\n  conversation_history = (\n    SELECT jsonb_agg(elem) FROM (\n      SELECT elem FROM jsonb_array_elements(conversation_history) AS elem\n      UNION ALL\n      SELECT jsonb_build_object(\n        'role', 'assistant',\n        'content', '{{ $json.twiml.replace(/<[^>]*>/g, \" \").replace(/'/g, \"''\").substring(0, 500) }}',\n        'timestamp', NOW()::text\n      )\n    ) sub\n  )\nWHERE call_sid = '{{ $json.callSid }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        -48
+      ],
+      "id": "101631ec-22db-440a-8dfc-c9d0db370185",
+      "name": "Save Booking Context",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Build Slots TwiML').first().json.twiml }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        736,
+        -48
+      ],
+      "id": "e0ab8cb5-b66c-4395-9974-2f49d4107dd7",
+      "name": "Send Slots TwiML"
+    },
+    {
+      "parameters": {
+        "jsCode": "// No availability — offer alternatives\nconst d = $('Build Available Slots').first().json;\nconst voice = d.selectedVoice || 'Polly.Matthew-Neural';\nconst isPolly = voice.startsWith('Polly.');\n\nconst message = \"I'm sorry, \" + d.spokenDate + \" is fully booked in that time range. Would you like to try a different day or time?\";\n\nconst retryUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/appointment-booking';\nconst returnUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1';\nconst gatherUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=0';\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + retryUrl + '\" method=\"POST\">' +\n      '<Say voice=\"' + voice + '\">' + message + '</Say>' +\n    '</Gather>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(message) + '&amp;voice_id=' + voice;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + retryUrl + '\" method=\"POST\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n}\n\n// Also prepare history update\nconst callSid = d.callSid || '';\nconst historyMsg = message.replace(/'/g, \"''\").substring(0, 500);\nconst historyUpdateSql = \"UPDATE voice_sessions SET conversation_history = (SELECT jsonb_agg(elem) FROM (SELECT elem FROM jsonb_array_elements(conversation_history) AS elem UNION ALL SELECT '{\\\"role\\\": \\\"assistant\\\", \\\"content\\\": \\\"\" + historyMsg + \"\\\", \\\"timestamp\\\": \\\"\" + new Date().toISOString() + \"\\\"}'::jsonb) sub) WHERE call_sid = '\" + callSid + \"';\";\n\nreturn [{ json: { twiml, historyUpdateSql, callSid } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        176
+      ],
+      "id": "778f6bff-2ea1-45b6-9c6f-ec1049b5a542",
+      "name": "Build No Slots TwiML"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Build No Slots TwiML').first().json.twiml }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        528,
+        176
+      ],
+      "id": "21155107-8245-43c9-a937-6f0de08a019e",
+      "name": "Send No Slots TwiML"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse error or calendar failure — fall back to manual capture\nconst params = $('Extract Params').first().json;\nconst settings = $('Load Account Settings').first()?.json || {};\nconst voice = settings.selected_voice || 'Polly.Matthew-Neural';\nconst isPolly = voice.startsWith('Polly.');\n\nconst message = \"I'm having a little trouble checking the calendar right now. Let me take note of your preferred time, and someone from our team will confirm your appointment by text shortly.\";\nconst returnUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1';\nconst gatherUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=0';\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + gatherUrl + '\" method=\"POST\">' +\n      '<Say voice=\"' + voice + '\">' + message + '</Say>' +\n    '</Gather>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(message) + '&amp;voice_id=' + voice;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + gatherUrl + '\" method=\"POST\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n}\n\n// Also prepare history update\nconst callSid = params.callSid || '';\nconst historyMsg = message.replace(/'/g, \"''\").substring(0, 500);\nconst historyUpdateSql = \"UPDATE voice_sessions SET conversation_history = (SELECT jsonb_agg(elem) FROM (SELECT elem FROM jsonb_array_elements(conversation_history) AS elem UNION ALL SELECT '{\\\"role\\\": \\\"assistant\\\", \\\"content\\\": \\\"\" + historyMsg + \"\\\", \\\"timestamp\\\": \\\"\" + new Date().toISOString() + \"\\\"}'::jsonb) sub) WHERE call_sid = '\" + callSid + \"';\";\n\nreturn [{ json: { twiml, historyUpdateSql, callSid } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        272
+      ],
+      "id": "887c736e-1186-407a-9712-0112e30ddbff",
+      "name": "Build Fallback TwiML"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Build Fallback TwiML').first().json.twiml }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        16,
+        256
+      ],
+      "id": "b7dbb2f1-01ee-4c9c-a5ed-971c0cf54324",
+      "name": "Send Fallback TwiML"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-confirm",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2112,
+        576
+      ],
+      "id": "64552528-6103-4f58-b21f-92d5aeffbc2b",
+      "name": "Booking Confirm",
+      "webhookId": "appointment-confirm"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract speech result and params\nconst body = $json.body || {};\nconst query = $json.query || {};\n\nreturn [{ json: {\n  speechResult: body.SpeechResult || '',\n  callSid: body.CallSid || query.callSid || '',\n  callerPhone: body.From || query.callerPhone || '',\n  calledNumber: body.To || query.calledNumber || ''\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1904,
+        576
+      ],
+      "id": "8619b229-102f-4939-a79a-04834f21e420",
+      "name": "Extract Confirm Params"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT booking_context, conversation_history FROM voice_sessions WHERE call_sid = '{{ $json.callSid }}' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1680,
+        576
+      ],
+      "id": "66b841b0-4475-4c8d-8b8f-d6dee87ec3cf",
+      "name": "Load Booking Context",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM account_settings LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1680,
+        784
+      ],
+      "id": "95f17407-97b7-4350-8c92-286a2029b857",
+      "name": "Load Settings 2",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        -1456,
+        656
+      ],
+      "id": "ea8982b6-d88e-4fde-bc87-30df2cbd551f",
+      "name": "Merge Confirm Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse booking context and match caller's slot selection\nconst params = $('Extract Confirm Params').first().json;\nconst contextRow = $('Load Booking Context').first()?.json || {};\nconst settings = $('Load Settings 2').first()?.json || {};\n\nlet bookingCtx;\ntry {\n  bookingCtx = typeof contextRow.booking_context === 'string'\n    ? JSON.parse(contextRow.booking_context)\n    : (contextRow.booking_context || {});\n} catch(e) {\n  bookingCtx = {};\n}\n\nconst slots = bookingCtx.slots || [];\nconst speech = (params.speechResult || '').toLowerCase().trim();\nconst voice = settings.selected_voice || 'Polly.Matthew-Neural';\nconst isPolly = voice.startsWith('Polly.');\nconst calendarId = settings.google_calendar_id || 'primary';\nconst duration = settings.booking_duration_minutes || 60;\nconst isExactMatch = bookingCtx.isExactMatch || false;\n\n// Helper: word boundary match\nfunction wordMatch(haystack, needle) {\n  const re = new RegExp('\\\\b' + needle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '\\\\b');\n  return re.test(haystack);\n}\n\n// Normalize speech: \"12:00 p.m.\" → \"12:00 pm\", \"3 a. m.\" → \"3 am\"\nconst normalizedSpeech = speech\n  .replace(/p\\.\\s*m\\.?/gi, 'pm')\n  .replace(/a\\.\\s*m\\.?/gi, 'am')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nlet matchedSlot = null;\nlet matchIndex = -1;\n\n// === EXACT MATCH PATH: caller was asked yes/no about one specific slot ===\nif (isExactMatch && slots.length === 1) {\n  const affirmatives = ['yes', 'yeah', 'sure', 'that works', 'perfect', 'okay', 'ok',\n    'sounds good', 'yep', 'absolutely', 'please', 'book it', 'go ahead',\n    \"that's fine\", 'works for me', \"let's do it\", 'confirm',\n    'make that', 'make it', 'schedule that', 'schedule it', 'set it',\n    'do that', 'do it', 'can you make', 'can you book', 'can you schedule',\n    'that time', 'that one', 'go for it', 'lock it in', 'sounds perfect',\n    'works great', \"that's great\", \"that's perfect\", 'i want that'];\n\n  const negatives = ['no', 'nope', 'not that', 'different', 'another', 'other',\n    'change', 'something else', 'try again', \"don't want\", 'not really'];\n\n  if (affirmatives.some(a => normalizedSpeech.includes(a) || speech.includes(a))) {\n    matchedSlot = slots[0];\n    matchIndex = 0;\n  } else if (negatives.some(n => normalizedSpeech.includes(n) || speech.includes(n))) {\n    matchedSlot = null;\n  }\n\n  // If caller restated the time (e.g. \"can you make that March 25th at 12:00 p.m.\")\n  if (!matchedSlot && !negatives.some(n => speech.includes(n))) {\n    const slot = slots[0];\n    const h = slot.startHour;\n    const m = slot.startMinute || 0;\n    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);\n    const mStr = String(m).padStart(2, '0');\n    const ampm = h >= 12 ? 'pm' : 'am';\n\n    const timePatterns = [\n      slot.label.toLowerCase(),\n      slot.label.toLowerCase().replace(/\\s+/g, ''),\n      h12 + ':' + mStr,\n      h12 + ':' + mStr + ' ' + ampm,\n      h12 + ':' + mStr + ampm,\n      String(h12) + ' ' + ampm,\n      String(h12) + ampm,\n      String(h12),\n    ];\n\n    if (timePatterns.some(t => normalizedSpeech.includes(t) || speech.includes(t))) {\n      matchedSlot = slots[0];\n      matchIndex = 0;\n    }\n  }\n}\n\n// === MULTI-SLOT PATH: caller picks from a list ===\nif (!matchedSlot && !isExactMatch) {\n  let bestScore = 0;\n\n  for (let i = 0; i < slots.length; i++) {\n    const label = slots[i].label.toLowerCase();\n    const h = slots[i].startHour;\n    const m = slots[i].startMinute || 0;\n    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);\n    const mStr = String(m).padStart(2, '0');\n    let score = 0;\n\n    if (normalizedSpeech.includes(label) || speech.includes(label)) {\n      score = 100;\n    } else if (normalizedSpeech.includes(label.replace(/\\s+/g, ''))) {\n      score = 95;\n    } else if (normalizedSpeech.includes(h12 + ':' + mStr)) {\n      score = 90;\n    } else if (wordMatch(normalizedSpeech, label.split(' ')[0])) {\n      score = 80;\n    } else {\n      const colonTime = h + ':' + mStr;\n      if (speech.includes(colonTime)) {\n        score = 85;\n      }\n    }\n\n    if (score === 0) {\n      const ordinals = [\n        ['first', '1st', 'one'],\n        ['second', '2nd', 'two'],\n        ['third', '3rd', 'three'],\n        ['fourth', '4th', 'four']\n      ];\n      const safeOrdinals = [\n        ['first', '1st'],\n        ['second', '2nd'],\n        ['third', '3rd'],\n        ['fourth', '4th']\n      ];\n      if (i < ordinals.length) {\n        if (safeOrdinals[i] && safeOrdinals[i].some(o => speech.includes(o))) {\n          score = 70;\n        } else if (ordinals[i].some(o => wordMatch(speech, o))) {\n          score = 60;\n        }\n      }\n    }\n\n    if (score > bestScore) {\n      bestScore = score;\n      matchedSlot = slots[i];\n      matchIndex = i;\n    }\n  }\n\n  // Single-slot affirmative (non-exact, e.g. \"closest time is 10:30\")\n  if (!matchedSlot && slots.length === 1) {\n    const affirmatives = ['yes', 'yeah', 'sure', 'that works', 'perfect', 'okay', 'ok', 'sounds good', 'yep'];\n    if (affirmatives.some(a => speech.includes(a))) {\n      matchedSlot = slots[0];\n      matchIndex = 0;\n    }\n  }\n}\n\n// === LAST RESORT: caller restated time in exact-match context ===\nif (!matchedSlot && isExactMatch) {\n  for (let i = 0; i < slots.length; i++) {\n    const label = slots[i].label.toLowerCase();\n    if (normalizedSpeech.includes(label) || speech.includes(label) ||\n        normalizedSpeech.includes(label.replace(/\\s+/g, ''))) {\n      matchedSlot = slots[i];\n      matchIndex = i;\n      break;\n    }\n  }\n}\n\n// Check if caller wants to cancel\nconst cancelPhrases = ['never mind', 'nevermind', 'cancel', 'no thanks', 'forget it', 'go back', 'actually no'];\nconst isCancel = cancelPhrases.some(pp => speech.includes(pp));\n\nreturn [{ json: {\n  callSid: params.callSid,\n  callerPhone: params.callerPhone,\n  calledNumber: params.calledNumber,\n  speechResult: params.speechResult,\n  matchedSlot,\n  matchIndex,\n  isCancel,\n  hasMatch: matchedSlot !== null,\n  slots,\n  bookingDate: bookingCtx.date,\n  spokenDate: bookingCtx.spokenDate,\n  serviceType: bookingCtx.serviceType || 'general',\n  bookingNotes: bookingCtx.notes || '',\n  selectedVoice: voice,\n  isPolly,\n  calendarId,\n  duration\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1232,
+        656
+      ],
+      "id": "6689c82d-60b2-434f-bfbe-a0bcf4a71961",
+      "name": "Match Slot Selection"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-match",
+              "leftValue": "={{ $json.hasMatch }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1024,
+        656
+      ],
+      "id": "f92409ff-994c-4a4b-9f58-ee53998d2a01",
+      "name": "Slot Matched?"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "xkc912@gmail.com",
+          "mode": "list",
+          "cachedResultName": "xkc912@gmail.com"
+        },
+        "start": "={{ $json.matchedSlot.start }}",
+        "end": "={{ $json.matchedSlot.end }}",
+        "additionalFields": {
+          "description": "={{ 'Booked via POD6 AI Receptionist\\nPhone: ' + $json.callerPhone + '\\nService: ' + ($json.serviceType || 'General') + '\\nNotes: ' + ($json.bookingNotes || 'None') }}",
+          "summary": "={{ ($json.serviceType !== 'general' ? $json.serviceType + ' - ' : 'Appointment - ') + 'Caller ' + $json.callerPhone }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -800,
+        560
+      ],
+      "id": "868f9bd2-94bc-4acd-bb14-d92a17a93812",
+      "name": "Google Calendar Create Event",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "Iw4KfKHczi4CAX8T",
+          "name": "Google Calendar OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Save booking record and build confirmation TwiML\nconst d = $('Match Slot Selection').first().json;\nconst eventResponse = $json;\nconst slot = d.matchedSlot;\n\nconst googleEventId = eventResponse?.id || '';\nconst calendarLink = eventResponse?.htmlLink || '';\n\n// Format confirmation time for speech\nconst spokenTime = slot.label;\nconst spokenDate = d.spokenDate;\nconst confirmMsg = \"Perfect, you're booked for \" + spokenDate + \" at \" + spokenTime + \". I've sent a confirmation text to your phone. Is there anything else I can help you with?\";\n\nconst voice = d.selectedVoice;\nconst isPolly = d.isPolly;\nconst returnUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1';\nconst gatherUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=0';\n\nlet twiml;\nif (isPolly) {\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + gatherUrl + '\" method=\"POST\">' +\n      '<Say voice=\"' + voice + '\">' + confirmMsg + '</Say>' +\n    '</Gather>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n} else {\n  const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(confirmMsg) + '&amp;voice_id=' + voice;\n  twiml = '<Response>' +\n    '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + gatherUrl + '\" method=\"POST\">' +\n      '<Play>' + audioUrl + '</Play>' +\n    '</Gather>' +\n    '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n  '</Response>';\n}\n\n// SMS confirmation text\nconst smsBody = \"Your appointment is confirmed for \" + spokenDate + \" at \" + spokenTime + \".\" +\n  (calendarLink ? \" View details: \" + calendarLink : \"\") +\n  \" To reschedule or cancel, call us back or reply to this text.\";\n\n// Booking record for DB\nconst bookingRecord = {\n  callSid: d.callSid,\n  callerPhone: d.callerPhone,\n  eventStart: slot.start,\n  eventEnd: slot.end,\n  duration: d.duration,\n  serviceType: d.serviceType,\n  notes: d.bookingNotes,\n  googleEventId,\n  calendarLink,\n  calendarId: d.calendarId\n};\n\nconst bookingJson = JSON.stringify(bookingRecord).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  twiml,\n  smsBody,\n  ...bookingRecord,\n  spokenTime,\n  spokenDate\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        560
+      ],
+      "id": "b65eda6b-336b-4da5-8757-e9d2b9e9893c",
+      "name": "Build Confirmation"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO bookings (call_sid, caller_phone, event_title, event_start, event_end, event_duration_minutes, service_type, notes, google_event_id, google_calendar_id, calendar_link, status) VALUES ('{{ $json.callSid }}', '{{ $json.callerPhone }}', '{{ ($json.serviceType || \"Appointment\") + \" - Caller \" + $json.callerPhone }}', '{{ $json.eventStart }}', '{{ $json.eventEnd }}', {{ $json.duration || 60 }}, '{{ $json.serviceType || \"general\" }}', '{{ ($json.notes || \"\").replace(/'/g, \"''\") }}', '{{ $json.googleEventId || \"\" }}', '{{ $json.calendarId || \"primary\" }}', '{{ $json.calendarLink || \"\" }}', 'confirmed');",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -352,
+        416
+      ],
+      "id": "7b7e83ac-add7-490b-a68e-09e4080173ca",
+      "name": "Save Booking Record",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/{{ $vars.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.callerPhone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $json.calledNumber || $vars.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.smsBody }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -352,
+        560
+      ],
+      "id": "f0e7d35c-d38a-44b3-a764-a37d5ad90c7d",
+      "name": "Send Confirmation SMS",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "JeyDot4SjdGzw7Qm",
+          "name": "Twilio API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE voice_sessions SET \n  booking_context = NULL,\n  conversation_history = (\n    SELECT jsonb_agg(elem) FROM (\n      SELECT elem FROM jsonb_array_elements(conversation_history) AS elem\n      UNION ALL\n      SELECT jsonb_build_object(\n        'role', 'user',\n        'content', '{{ $(\"Match Slot Selection\").first().json.speechResult.replace(/'/g, \"''\") }}',\n        'timestamp', NOW()::text\n      )\n      UNION ALL\n      SELECT jsonb_build_object(\n        'role', 'assistant',\n        'content', 'Appointment confirmed for {{ $json.spokenDate }} at {{ $json.spokenTime }}.',\n        'timestamp', NOW()::text\n      )\n    ) sub\n  )\nWHERE call_sid = '{{ $json.callSid }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -352,
+        688
+      ],
+      "id": "d3357d2d-42cc-4ec4-9b91-3b361e63954c",
+      "name": "Clear Booking Context",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO analytics_events (event_type, channel, customer_phone, session_id, event_data) VALUES ('booking_confirmed', 'voice', '{{ $('Match Slot Selection').first().json.callerPhone }}', '{{ $('Match Slot Selection').first().json.callSid }}', '{{ JSON.stringify({ service: $('Match Slot Selection').first().json.serviceType, date: $('Match Slot Selection').first().json.bookingDate, time: $('Match Slot Selection').first().json.matchedSlot.label }).replace(/\\x27/g, \"''\") }}'::jsonb);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -144,
+        656
+      ],
+      "id": "492a4166-814f-49cd-9337-094b04c8e3bb",
+      "name": "Log Booking Analytics",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Build Confirmation').first().json.twiml }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        80,
+        560
+      ],
+      "id": "33377a83-b81a-42eb-a4ad-9a07114aef88",
+      "name": "Send Confirmation TwiML"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Caller didn't clearly pick a slot — ask again or handle cancel\nconst d = $('Match Slot Selection').first().json;\nconst voice = d.selectedVoice;\nconst isPolly = d.isPolly;\nconst returnUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=1';\nconst gatherUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/twilio-voice?retry=0';\n\nlet message, twiml;\n\nif (d.isCancel) {\n  // Caller wants to cancel booking\n  message = \"No problem! Let me know if there's anything else I can help you with.\";\n  if (isPolly) {\n    twiml = '<Response>' +\n      '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + gatherUrl + '\" method=\"POST\">' +\n        '<Say voice=\"' + voice + '\">' + message + '</Say>' +\n      '</Gather>' +\n      '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n    '</Response>';\n  } else {\n    const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(message) + '&amp;voice_id=' + voice;\n    twiml = '<Response>' +\n      '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + gatherUrl + '\" method=\"POST\">' +\n        '<Play>' + audioUrl + '</Play>' +\n      '</Gather>' +\n      '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n    '</Response>';\n  }\n} else {\n  // Unclear — ask again\n  const slotLabels = d.slots.map(s => s.label).join(', ');\n  message = \"I didn't quite catch which time you preferred. The available times are \" + slotLabels + \". Which one works for you?\";\n  \n  const retryUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/appointment-confirm';\n  \n  if (isPolly) {\n    twiml = '<Response>' +\n      '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + retryUrl + '\" method=\"POST\">' +\n        '<Say voice=\"' + voice + '\">' + message + '</Say>' +\n      '</Gather>' +\n      '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n    '</Response>';\n  } else {\n    const audioUrl = 'https://chi-360dmmc.app.n8n.cloud/webhook/get-growth-audio?text=' + encodeURIComponent(message) + '&amp;voice_id=' + voice;\n    twiml = '<Response>' +\n      '<Gather input=\"speech\" language=\"en-US\" speechTimeout=\"auto\" action=\"' + retryUrl + '\" method=\"POST\">' +\n        '<Play>' + audioUrl + '</Play>' +\n      '</Gather>' +\n      '<Redirect method=\"POST\">' + returnUrl + '</Redirect>' +\n    '</Response>';\n  }\n}\n\n// Prepare history update\nconst callSid = d.callSid || '';\nconst historyMsg = message.replace(/'/g, \"''\").substring(0, 500);\nconst speechMsg = (d.speechResult || '').replace(/'/g, \"''\").substring(0, 500);\nconst historyUpdateSql = \"UPDATE voice_sessions SET conversation_history = (SELECT jsonb_agg(elem) FROM (SELECT elem FROM jsonb_array_elements(conversation_history) AS elem UNION ALL SELECT '{\\\"role\\\": \\\"user\\\", \\\"content\\\": \\\"\" + speechMsg + \"\\\", \\\"timestamp\\\": \\\"\" + new Date().toISOString() + \"\\\"}'::jsonb UNION ALL SELECT '{\\\"role\\\": \\\"assistant\\\", \\\"content\\\": \\\"\" + historyMsg + \"\\\", \\\"timestamp\\\": \\\"\" + new Date().toISOString() + \"\\\"}'::jsonb) sub) WHERE call_sid = '\" + callSid + \"';\";\n\nreturn [{ json: { twiml, historyUpdateSql, callSid } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        784
+      ],
+      "id": "2b9cc30d-4378-48d8-a1ba-d7edf9b7fbb2",
+      "name": "Build Retry/Cancel TwiML"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Build Retry/Cancel TwiML').first().json.twiml }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -576,
+        784
+      ],
+      "id": "ddb0801a-5ae5-4ca8-841e-fa748b7dd7ca",
+      "name": "Send Retry TwiML"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-match",
+              "leftValue": "={{ $json.parseError }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -608,
+        160
+      ],
+      "id": "f22e0666-7ef8-491e-9e9b-d2f7041897de",
+      "name": "Parse OK?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.historyUpdateSql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -192,
+        256
+      ],
+      "id": "9226c8f4-60e9-4900-a506-df2716d5e14f",
+      "name": "Update History (Fallback)",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.historyUpdateSql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        176
+      ],
+      "id": "859bc262-62b5-4325-a6dc-d5b1b00c4379",
+      "name": "Update History (No Slots)",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.historyUpdateSql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -688,
+        784
+      ],
+      "id": "7d5cd20f-01b7-4b4d-9788-ade33f871de7",
+      "name": "Update History (Retry)",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Booking Entry": {
+      "main": [
+        [
+          {
+            "node": "Extract Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Params": {
+      "main": [
+        [
+          {
+            "node": "Load Session",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Account Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session": {
+      "main": [
+        [
+          {
+            "node": "Merge Session + Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Account Settings": {
+      "main": [
+        [
+          {
+            "node": "Merge Session + Settings",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Session + Settings": {
+      "main": [
+        [
+          {
+            "node": "Prepare Booking Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Booking Context": {
+      "main": [
+        [
+          {
+            "node": "Extract Booking Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Booking Details": {
+      "main": [
+        [
+          {
+            "node": "Parse Booking Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Booking Details": {
+      "main": [
+        [
+          {
+            "node": "Parse OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google FreeBusy Check": {
+      "main": [
+        [
+          {
+            "node": "Build Available Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Available Slots": {
+      "main": [
+        [
+          {
+            "node": "Has Slots?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Slots?": {
+      "main": [
+        [
+          {
+            "node": "Build Slots TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build No Slots TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Slots TwiML": {
+      "main": [
+        [
+          {
+            "node": "Save Booking Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Booking Context": {
+      "main": [
+        [
+          {
+            "node": "Send Slots TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build No Slots TwiML": {
+      "main": [
+        [
+          {
+            "node": "Update History (No Slots)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Fallback TwiML": {
+      "main": [
+        [
+          {
+            "node": "Update History (Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Confirm": {
+      "main": [
+        [
+          {
+            "node": "Extract Confirm Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Confirm Params": {
+      "main": [
+        [
+          {
+            "node": "Load Booking Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Settings 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Booking Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Confirm Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Settings 2": {
+      "main": [
+        [
+          {
+            "node": "Merge Confirm Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Confirm Data": {
+      "main": [
+        [
+          {
+            "node": "Match Slot Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Slot Selection": {
+      "main": [
+        [
+          {
+            "node": "Slot Matched?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot Matched?": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Retry/Cancel TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar Create Event": {
+      "main": [
+        [
+          {
+            "node": "Build Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Save Booking Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Confirmation SMS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Clear Booking Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Booking Context": {
+      "main": [
+        [
+          {
+            "node": "Log Booking Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Booking Analytics": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Retry/Cancel TwiML": {
+      "main": [
+        [
+          {
+            "node": "Update History (Retry)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OK?": {
+      "main": [
+        [
+          {
+            "node": "Google FreeBusy Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fallback TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update History (Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Send Fallback TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update History (No Slots)": {
+      "main": [
+        [
+          {
+            "node": "Send No Slots TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update History (Retry)": {
+      "main": [
+        [
+          {
+            "node": "Send Retry TwiML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "878c2de7-a621-4370-afbf-fe9d17ff6faa",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "z1uJZ2zTMmP0sawi",
+  "tags": []
+}

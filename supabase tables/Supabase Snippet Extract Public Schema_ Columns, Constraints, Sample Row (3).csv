@@ -1,0 +1,46 @@
+table_name,column_name,data_type,is_nullable,column_default
+customers,customer_id,uuid,NO,gen_random_uuid()
+customers,phone,text,NO,null
+customers,name,text,YES,'Guest'::text
+customers,tier,text,YES,'Starter'::text
+customers,key_facts,jsonb,YES,'{}'::jsonb
+customers,created_at,timestamp with time zone,YES,now()
+customers,updated_at,timestamp with time zone,YES,now()
+customers,tenant_id,uuid,YES,null
+customers,email,text,YES,null
+faq_entries,id,integer,NO,nextval('faq_entries_id_seq'::regclass)
+faq_entries,category,text,NO,null
+faq_entries,question,text,NO,null
+faq_entries,answer,text,NO,null
+faq_entries,is_coming_soon,boolean,YES,false
+faq_entries,created_at,timestamp with time zone,YES,now()
+faq_entries,search_vector,tsvector,YES,null
+faq_entries,tenant_id,uuid,YES,null
+opt_outs,id,uuid,NO,gen_random_uuid()
+opt_outs,phone,text,NO,null
+opt_outs,channel,text,NO,'all'::text
+opt_outs,opted_out_at,timestamp with time zone,NO,now()
+opt_outs,reason,text,YES,null
+opt_outs,resubscribed_at,timestamp with time zone,YES,null
+opt_outs,tenant_id,uuid,YES,null
+voice_config,voice_id,text,NO,null
+voice_config,polly_voice,text,NO,null
+voice_config,display_name,text,YES,null
+voice_config,tier,text,YES,'starter'::text
+voice_config,gender,text,YES,null
+voice_config,tenant_id,uuid,YES,null
+voice_sessions,id,integer,NO,nextval('voice_sessions_id_seq'::regclass)
+voice_sessions,call_sid,character varying,NO,null
+voice_sessions,caller_phone,character varying,NO,null
+voice_sessions,called_number,character varying,YES,null
+voice_sessions,customer_id,uuid,YES,null
+voice_sessions,tier,character varying,YES,'starter'::character varying
+voice_sessions,selected_voice,character varying,YES,'Polly.Matthew-Neural'::character varying
+voice_sessions,conversation_history,jsonb,YES,'[]'::jsonb
+voice_sessions,session_metadata,jsonb,YES,'{}'::jsonb
+voice_sessions,started_at,timestamp with time zone,YES,now()
+voice_sessions,last_activity_at,timestamp with time zone,YES,now()
+voice_sessions,status,character varying,YES,'active'::character varying
+voice_sessions,created_at,timestamp with time zone,YES,now()
+voice_sessions,booking_context,jsonb,YES,null
+voice_sessions,tenant_id,uuid,YES,null

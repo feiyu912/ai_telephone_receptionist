@@ -1,0 +1,806 @@
+{
+  "name": "WhatsApp Channel - Agentic",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        2592
+      ],
+      "id": "3ea342be-d93d-4a0a-b677-e0bc244c1a70",
+      "name": "Twilio WhatsApp In",
+      "webhookId": "whatsapp-inbound"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst from = (body.From || '').replace('whatsapp:', '');\nconst to = (body.To || '').replace('whatsapp:', '');\nconst messageSid = body.MessageSid || '';\nconst messageBody = (body.Body || '').trim();\nconst profileName = body.ProfileName || '';\nconst msg = messageBody.toUpperCase();\n\nlet phone = from.replace(/[^+\\d]/g, '');\nif (phone && !phone.startsWith('+')) phone = '+' + phone;\n\nconst isStop = ['STOP','UNSUBSCRIBE','CANCEL','END','QUIT'].includes(msg);\nconst isHelp = ['HELP','INFO'].includes(msg);\nconst isStart = ['START','YES','UNSTOP'].includes(msg);\n\nlet complianceAction = 'normal', complianceReply = '';\nif (isStop) { complianceAction = 'opt_out'; complianceReply = 'You have been unsubscribed from WhatsApp messages. Reply START to re-subscribe.'; }\nelse if (isHelp) { complianceAction = 'help'; complianceReply = 'Reply STOP to unsubscribe. For support, call us or visit 360dmmc.com.'; }\nelse if (isStart) { complianceAction = 'opt_in'; complianceReply = 'You have been re-subscribed. Welcome back!'; }\n\nreturn [{ json: { channel: 'whatsapp', phone, to, messageSid, messageBody, profileName,\n  sendTo: 'whatsapp:' + phone, sendFrom: 'whatsapp:' + to,\n  complianceAction, complianceReply, isComplianceOverride: complianceAction !== 'normal' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        2592
+      ],
+      "id": "d701f068-8754-4414-aee2-56c1e316878c",
+      "name": "Normalize + Compliance Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Idempotency: check if this MessageSid was already processed\nconst d = $json;\nconst sid = d.messageSid;\nif (!sid) return [{ json: { ...d, isDuplicate: false } }];\n\n// We'll use a simple approach: check analytics_events for this session_id\n// In production, consider Redis or a dedicated dedup table\nreturn [{ json: { ...d, isDuplicate: false } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        2592
+      ],
+      "id": "de9eee0a-61d9-4a63-be23-b7e8aef06521",
+      "name": "Idempotency Check"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM opt_outs WHERE phone = '{{ $json.phone }}' AND (channel = 'whatsapp' OR channel = 'all') LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        576,
+        2592
+      ],
+      "id": "20924d60-3015-476f-92dc-f9cae4fdfb19",
+      "name": "Check Opt-Out",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Normalize + Compliance Check').first().json;\nconst optOutRow = $json;\nconst isOptedOut = optOutRow && optOutRow.id;\n\nif (isOptedOut && d.complianceAction !== 'opt_in') {\n  return [{ json: { ...d, finalAction: 'blocked' } }];\n}\nif (d.isComplianceOverride) {\n  return [{ json: { ...d, finalAction: d.complianceAction } }];\n}\nreturn [{ json: { ...d, finalAction: 'agent' } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        2592
+      ],
+      "id": "11a75435-3808-4260-9eb3-d49ee6b816e3",
+      "name": "Route Decision"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.finalAction }}",
+                    "rightValue": "agent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.finalAction }}",
+                    "rightValue": "blocked",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.finalAction }}",
+                    "rightValue": "blocked",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1024,
+        2592
+      ],
+      "id": "9884740a-8a12-4a99-9214-fa07a4a160de",
+      "name": "Route"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst action = d.finalAction;\nlet sql = '';\nif (action === 'opt_out') {\n  sql = \"INSERT INTO opt_outs (phone, channel, opted_out_at) VALUES ('\" + d.phone + \"', 'whatsapp', NOW()) ON CONFLICT DO NOTHING;\";\n} else if (action === 'opt_in') {\n  sql = \"DELETE FROM opt_outs WHERE phone = '\" + d.phone + \"' AND channel = 'whatsapp';\";\n}\nreturn [{ json: { ...d, complianceSql: sql } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        2816
+      ],
+      "id": "34a6992e-d55b-4e43-afee-0f629d1b2f43",
+      "name": "Compliance Action"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.complianceSql || 'SELECT 1;' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1520,
+        2848
+      ],
+      "id": "0bd367ec-411f-4151-a740-fc04e2e42eff",
+      "name": "Execute Compliance SQL",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO analytics_events (event_type, channel, customer_phone, event_data) VALUES ('compliance_{{ $('Compliance Action').first().json.complianceAction }}', 'whatsapp', '{{ $('Compliance Action').first().json.phone }}', '{\"action\": \"{{ $('Compliance Action').first().json.complianceAction }}\"}'::jsonb);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1520,
+        3040
+      ],
+      "id": "2567edc9-736b-416c-a1e6-bc0071a6ab22",
+      "name": "Log Compliance Event",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/{{ $vars.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $('Compliance Action').first().json.sendTo }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $('Compliance Action').first().json.sendFrom }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $('Compliance Action').first().json.complianceReply }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        2672
+      ],
+      "id": "65340b8c-acf7-48c2-9391-7c0bcd55f867",
+      "name": "Send Compliance Reply",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "JeyDot4SjdGzw7Qm",
+          "name": "Twilio API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1776,
+        2848
+      ],
+      "id": "e218aa06-b942-4872-9965-f5418e198560",
+      "name": "Ack Compliance"
+    },
+    {
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1216,
+        3168
+      ],
+      "id": "cbbd08a3-4e18-4ef3-9697-3d6b90bf44e4",
+      "name": "Silent Block"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, phone, name, tier FROM customers WHERE phone = '{{ $json.phone }}' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        2288
+      ],
+      "id": "7280ad9a-1044-415d-b2aa-e3d8923a6f24",
+      "name": "Lookup Customer",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Route Decision').first().json;\nconst customer = $json || {};\nconst customerName = customer.name || '';\nconst tier = customer.tier || 'starter';\n\nreturn [{ json: {\n  chatInput: d.messageBody,\n  phone: d.phone,\n  sendTo: d.sendTo,\n  sendFrom: d.sendFrom,\n  messageSid: d.messageSid,\n  profileName: d.profileName,\n  customerName,\n  tier,\n  channel: 'whatsapp'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        2288
+      ],
+      "id": "efb5da29-b118-4046-b921-5ef53759ac13",
+      "name": "Prepare Agent Input"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=WhatsApp from {{ $json.phone }} (profile: {{ $json.profileName || \"unknown\" }}). Customer tier: {{ $json.tier }}. Known name: {{ $json.customerName || 'unknown' }}.\nMessage: {{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are the YourCompany WhatsApp Assistant — professional, warm, and friendly.\n\nRules:\n- Keep responses SHORT for WhatsApp (under 50 words).\n- Natural language, no markdown. Never say you are an AI.\n\nAbout YourCompany: AI consulting & digital transformation — automation, marketing, CX, data analytics.\n- Services info: \"We offer AI automation, digital marketing, CX design, and data analytics.\"\n- Pricing: \"Depends on your needs. Want a free consultation? Reply YES.\"\n- Website: 360dmmc.com\n\n## CALLER PRIVACY & IDENTITY VERIFICATION\nYou have tools to look up and save caller memory. Memory has two tiers:\n- SAFE facts (service_interest, call_count, etc.) — use freely\n- PROTECTED facts (name, email, etc.) — verify identity first\n\nVERIFICATION: Ask \"Can I confirm your name?\" before using protected info.\nIf their name matches stored name → verified, use protected info naturally.\nIf no match → treat as new person. NEVER reveal what's stored.\n\nCONSENT: For new contacts, ask \"Would you like me to remember your details for next time?\"\nIf yes: save their info with the save_memory tool.\nIf no: don't save. Say \"No problem!\"\n\nFORGET-ME: If they say \"forget me\" or \"delete my data\" → call the forget_caller tool and confirm deletion.\n\nTOOLS (use in this order):\n1. lookup_memory — Call FIRST on every conversation. Pass the caller's phone number.\n2. Respond to the caller based on memory + their message.\n3. save_memory — Save any new facts learned (name, interest, sentiment, topic). Pass phone, key, value, channel='whatsapp'.\n4. hubspot_sync — Call after meaningful conversations. Pass phone, name (if known), summary, channel='whatsapp'.\n5. log_analytics — Log the event. Pass phone, event_type='whatsapp_message', channel='whatsapp', summary.\n6. forget_caller — ONLY if they request data deletion. Pass phone.",
+          "maxIterations": 6,
+          "returnIntermediateSteps": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1648,
+        2288
+      ],
+      "id": "c3cf4105-cfab-424d-b439-c39ee875b0c0",
+      "name": "WhatsApp AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4-turbo",
+          "mode": "list"
+        },
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1536,
+        2496
+      ],
+      "id": "7ec30b6e-9f82-4403-9e96-a2056caac2ef",
+      "name": "OpenAI GPT-4",
+      "credentials": {
+        "openAiApi": {
+          "id": "XIfko2o0mrpebRfj",
+          "name": "OpenAi account POD2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Prepare Agent Input').first().json.phone }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1696,
+        2496
+      ],
+      "id": "81da37f0-d4ed-4b82-831a-d4dbfbf84777",
+      "name": "Window Buffer Memory"
+    },
+    {
+      "parameters": {
+        "name": "lookup_memory",
+        "description": "Look up stored facts about a caller. Call FIRST every conversation. Pass: phone (E.164). Returns memory_key, memory_value, privacy_tier. SAFE facts = use freely. PROTECTED facts = verify identity first.",
+        "workflowId": {
+          "__rl": true,
+          "value": "tool-lookup-memory",
+          "mode": "id"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        2496
+      ],
+      "id": "5960eb4e-2a44-4746-8fa0-080669a6f76c",
+      "name": "lookup_memory"
+    },
+    {
+      "parameters": {
+        "name": "save_memory",
+        "description": "Save a fact about a caller. Pass: phone (E.164), key (name/email/service_interest/last_topic/sentiment), value, channel ('whatsapp'). Protected keys need consent.",
+        "workflowId": {
+          "__rl": true,
+          "value": "tool-save-memory",
+          "mode": "id"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        2496
+      ],
+      "id": "6aad93d2-d094-45ee-86a2-db56a7c68acf",
+      "name": "save_memory"
+    },
+    {
+      "parameters": {
+        "name": "forget_caller",
+        "description": "Delete ALL caller data on request. Pass: phone (E.164).",
+        "workflowId": {
+          "__rl": true,
+          "value": "tool-forget-caller",
+          "mode": "id"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        2496
+      ],
+      "id": "0ea46fed-4cba-4bad-96e2-a1e2a5a985f3",
+      "name": "forget_caller"
+    },
+    {
+      "parameters": {
+        "name": "log_analytics",
+        "description": "Log analytics event. Pass: phone, event_type ('whatsapp_message'), channel ('whatsapp'), summary.",
+        "workflowId": {
+          "__rl": true,
+          "value": "tool-log-analytics",
+          "mode": "id"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        2496
+      ],
+      "id": "33eb9668-6eee-444a-b02b-abf6ec5e953e",
+      "name": "log_analytics"
+    },
+    {
+      "parameters": {
+        "name": "hubspot_sync",
+        "description": "Sync to HubSpot CRM. Call after meaningful conversations. Pass: phone, name (if known), summary, channel ('whatsapp'). Searches for contact, creates if new, logs engagement note.",
+        "workflowId": {
+          "__rl": true,
+          "value": "tool-hubspot-sync",
+          "mode": "id"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        2496
+      ],
+      "id": "6de1a52a-1a8b-41f8-9c8a-c84c5e61650b",
+      "name": "hubspot_sync"
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $json.output || $json.text || 'Sorry, I could not process your message.';\nconst input = $('Prepare Agent Input').first().json;\nreturn [{ json: { reply: agentOutput.substring(0, 1600), sendTo: input.sendTo, sendFrom: input.sendFrom } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        2288
+      ],
+      "id": "1f824443-cd91-49fe-a9b4-75268820af96",
+      "name": "Extract Agent Reply"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/{{ $vars.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.sendTo }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $json.sendFrom }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.reply }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2128,
+        2288
+      ],
+      "id": "45d940d5-1043-490d-9bf9-17eab59b4b40",
+      "name": "Send WhatsApp Reply",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "JeyDot4SjdGzw7Qm",
+          "name": "Twilio API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2352,
+        2288
+      ],
+      "id": "0bd09f0d-5a27-4d30-b14b-c84db60de457",
+      "name": "Acknowledge Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Twilio WhatsApp In": {
+      "main": [
+        [
+          {
+            "node": "Normalize + Compliance Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize + Compliance Check": {
+      "main": [
+        [
+          {
+            "node": "Idempotency Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Idempotency Check": {
+      "main": [
+        [
+          {
+            "node": "Check Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Route Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Decision": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Lookup Customer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Compliance Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Silent Block",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Action": {
+      "main": [
+        [
+          {
+            "node": "Execute Compliance SQL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Compliance Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Compliance Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Compliance SQL": {
+      "main": [
+        [
+          {
+            "node": "Ack Compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Customer": {
+      "main": [
+        [
+          {
+            "node": "Prepare Agent Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Agent Input": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Extract Agent Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup_memory": {
+      "ai_tool": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "save_memory": {
+      "ai_tool": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "forget_caller": {
+      "ai_tool": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_analytics": {
+      "ai_tool": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "hubspot_sync": {
+      "ai_tool": [
+        [
+          {
+            "node": "WhatsApp AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Agent Reply": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Reply": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0882d110-a2d7-4b2b-aab8-52033293a9b1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "flWjSO9PbfjJnO39",
+  "tags": []
+}

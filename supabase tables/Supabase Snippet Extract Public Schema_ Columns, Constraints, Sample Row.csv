@@ -1,0 +1,101 @@
+table_name,column_name,data_type,is_nullable,column_default
+account_settings,phone_number,text,NO,null
+account_settings,selected_voice,text,YES,'Polly.Matthew-Neural'::text
+account_settings,tier,text,YES,'starter'::text
+account_settings,google_calendar_id,character varying,YES,'primary'::character varying
+account_settings,booking_duration_minutes,integer,YES,60
+account_settings,booking_buffer_minutes,integer,YES,15
+account_settings,booking_advance_days,integer,YES,30
+account_settings,booking_enabled,boolean,YES,false
+account_settings,hunt_group_numbers,jsonb,YES,'[]'::jsonb
+account_settings,transfer_timeout,integer,YES,20
+account_settings,memory_expiry_days,integer,YES,90
+account_settings,memory_consent_required,boolean,YES,true
+account_settings,pii_verification_required,boolean,YES,true
+account_settings,tenant_id,uuid,YES,gen_random_uuid()
+account_settings,slug,text,YES,null
+account_settings,company_name,text,YES,null
+account_settings,system_prompt,text,YES,null
+account_settings,system_prompt_growth,text,YES,null
+account_settings,webhook_base_url,text,YES,null
+account_settings,greeting_new,text,YES,null
+account_settings,greeting_returning,text,YES,null
+account_settings,after_hours_message,text,YES,null
+account_settings,voicemail_email,text,YES,null
+account_settings,hubspot_booking_link,text,YES,null
+account_settings,business_hours_start,integer,YES,9
+account_settings,business_hours_end,integer,YES,17
+account_settings,business_hours_timezone,text,YES,'America/Chicago'::text
+account_settings,business_hours_days,jsonb,YES,"'[1, 2, 3, 4, 5]'::jsonb"
+account_settings,is_active,boolean,YES,true
+account_settings,created_at,timestamp with time zone,YES,now()
+analytics_events,id,uuid,NO,gen_random_uuid()
+analytics_events,event_type,text,NO,null
+analytics_events,channel,text,NO,null
+analytics_events,customer_phone,text,YES,null
+analytics_events,session_id,text,YES,null
+analytics_events,event_data,jsonb,YES,'{}'::jsonb
+analytics_events,created_at,timestamp with time zone,NO,now()
+analytics_events,tenant_id,uuid,YES,null
+bookings,id,integer,NO,nextval('bookings_id_seq'::regclass)
+bookings,call_sid,character varying,NO,null
+bookings,caller_phone,character varying,NO,null
+bookings,caller_name,character varying,YES,null
+bookings,caller_email,character varying,YES,null
+bookings,event_title,character varying,YES,null
+bookings,event_start,timestamp with time zone,NO,null
+bookings,event_end,timestamp with time zone,NO,null
+bookings,event_duration_minutes,integer,YES,60
+bookings,service_type,character varying,YES,'general'::character varying
+bookings,notes,text,YES,null
+bookings,google_event_id,character varying,YES,null
+bookings,google_calendar_id,character varying,YES,null
+bookings,calendar_link,text,YES,null
+bookings,status,character varying,YES,'confirmed'::character varying
+bookings,confirmation_sms_sent,boolean,YES,false
+bookings,confirmation_sms_sid,character varying,YES,null
+bookings,created_at,timestamp with time zone,YES,now()
+bookings,updated_at,timestamp with time zone,YES,now()
+bookings,cancelled_at,timestamp with time zone,YES,null
+bookings,tenant_id,uuid,YES,null
+caller_consent,id,integer,NO,nextval('caller_consent_id_seq'::regclass)
+caller_consent,caller_phone,character varying,NO,null
+caller_consent,memory_consent,boolean,YES,false
+caller_consent,consent_given_at,timestamp with time zone,YES,null
+caller_consent,consent_channel,character varying,YES,null
+caller_consent,memory_expiry_days,integer,YES,90
+caller_consent,forget_requested,boolean,YES,false
+caller_consent,forget_requested_at,timestamp with time zone,YES,null
+caller_consent,forget_completed_at,timestamp with time zone,YES,null
+caller_consent,created_at,timestamp with time zone,YES,now()
+caller_consent,updated_at,timestamp with time zone,YES,now()
+caller_consent,tenant_id,uuid,YES,null
+caller_memory,id,integer,NO,nextval('caller_memory_id_seq'::regclass)
+caller_memory,caller_phone,character varying,NO,null
+caller_memory,customer_id,uuid,YES,null
+caller_memory,memory_key,character varying,NO,null
+caller_memory,memory_value,text,NO,null
+caller_memory,source_channel,character varying,YES,'unknown'::character varying
+caller_memory,source_session,character varying,YES,null
+caller_memory,confidence,real,YES,1.0
+caller_memory,created_at,timestamp with time zone,YES,now()
+caller_memory,updated_at,timestamp with time zone,YES,now()
+caller_memory,privacy_tier,character varying,YES,'protected'::character varying
+caller_memory,expires_at,timestamp with time zone,YES,null
+caller_memory,tenant_id,uuid,YES,null
+conversation_messages,message_id,uuid,NO,gen_random_uuid()
+conversation_messages,conversation_id,text,NO,null
+conversation_messages,direction,text,NO,null
+conversation_messages,role,text,NO,null
+conversation_messages,content,text,NO,null
+conversation_messages,content_masked,text,YES,null
+conversation_messages,intent,text,YES,null
+conversation_messages,confidence_score,numeric,YES,null
+conversation_messages,response_time_ms,integer,YES,null
+conversation_messages,media_urls,jsonb,YES,'[]'::jsonb
+conversation_messages,metadata,jsonb,YES,'{}'::jsonb
+conversation_messages,created_at,timestamp with time zone,NO,now()
+conversation_messages,tenant_id,uuid,YES,null
+conversations,conversation_id,text,NO,gen_random_uuid()
+conversations,customer_id,uuid,YES,null
+conversations,channel,text,YES,null

@@ -1,0 +1,135 @@
+{
+  "name": "Memory Cleanup - Daily Expiry + Forget-Me",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ae5b88f0-e661-434c-94fc-38198c3ef8e0",
+      "name": "Daily Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Delete expired memory entries\nDELETE FROM caller_memory WHERE expires_at IS NOT NULL AND expires_at < NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "id": "8f90ec2d-3b56-4fc3-a12a-5b296561307d",
+      "name": "Delete Expired Memory",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Process forget-me requests: delete all memory for these callers\nDELETE FROM caller_memory WHERE caller_phone IN (SELECT caller_phone FROM caller_consent WHERE forget_requested = TRUE AND forget_completed_at IS NULL);\n\n-- Mark forget-me as completed\nUPDATE caller_consent SET forget_completed_at = NOW() WHERE forget_requested = TRUE AND forget_completed_at IS NULL;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        0
+      ],
+      "id": "366a2f6f-0d01-49e0-93ea-ae17b7a1fe3f",
+      "name": "Process Forget-Me Requests",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Log cleanup stats\nINSERT INTO analytics_events (event_type, channel, event_data) VALUES ('memory_cleanup', 'system', json_build_object('timestamp', NOW()::text, 'type', 'daily_expiry_and_forgetme')::jsonb);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        0
+      ],
+      "id": "654adb8c-f1ae-4db8-8a8d-707328b9e42d",
+      "name": "Log Cleanup",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Delete Expired Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Expired Memory": {
+      "main": [
+        [
+          {
+            "node": "Process Forget-Me Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Forget-Me Requests": {
+      "main": [
+        [
+          {
+            "node": "Log Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f4f3c1fe-031f-40d3-88eb-677d1e18fc2c",
+  "meta": {
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "arTVLmoBITtDwqqL",
+  "tags": []
+}

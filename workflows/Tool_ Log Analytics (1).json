@@ -1,0 +1,112 @@
+{
+  "name": "Tool: Log Analytics",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "46e34808-80d3-4d31-a19b-0aec0f11b0f7",
+      "name": "Execute Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build SQL from input parameters\nconst input = $json;\nconst phone = (input.phone || '').replace(/'/g, \"''\");\nconst event_type = (input.event_type || '').replace(/'/g, \"''\");\nconst channel = (input.channel || '').replace(/'/g, \"''\");\nconst summary = (input.summary || '').replace(/'/g, \"''\");\n\nconst sql = `INSERT INTO analytics_events (event_type, channel, customer_phone, event_data)\nVALUES ('$${event_type}', '$${channel}', '$${phone}', json_build_object('summary', '$${summary}')::jsonb)`;\nreturn [{ json: { sql } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "55ac230d-bdfb-4308-8545-4eb8920dbde7",
+      "name": "Build SQL"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        0
+      ],
+      "id": "5b5f9ad2-df6b-423c-939d-fe78301a43f0",
+      "name": "Execute Query",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return results to the calling Agent\nconst results = $input.all().map(r => r.json);\nreturn [{ json: { results } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "7ae33936-021a-424e-be78-68c4f8e37be2",
+      "name": "Format Results"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Execute Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Query": {
+      "main": [
+        [
+          {
+            "node": "Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "88174ceb-7442-4b8d-b386-479417a803c0",
+  "meta": {
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "SZ8AmqU0HuHodnZl",
+  "tags": []
+}

@@ -1,0 +1,112 @@
+{
+  "name": "Tool: Lookup Memory",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a4697485-1c1c-499d-802f-751628ec6b5b",
+      "name": "Execute Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build SQL from input parameters\nconst input = $json;\nconst phone = (input.phone || '').replace(/'/g, \"''\");\n\nconst sql = `SELECT memory_key, memory_value, privacy_tier FROM caller_memory\nWHERE caller_phone = '$${phone}'\nAND (expires_at IS NULL OR expires_at > NOW())\nAND caller_phone NOT IN (\n  SELECT caller_phone FROM caller_consent\n  WHERE forget_requested = TRUE AND forget_completed_at IS NULL\n)`;\nreturn [{ json: { sql } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "6b96e217-78ca-4daa-b3d8-beb18974db72",
+      "name": "Build SQL"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        0
+      ],
+      "id": "6b8cf827-f24a-4d30-afb9-95a7e7f19ce6",
+      "name": "Execute Query",
+      "credentials": {
+        "postgres": {
+          "id": "mdzQ9kNitqp9h6ra",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return results to the calling Agent\nconst results = $input.all().map(r => r.json);\nreturn [{ json: { results } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "66fe03c2-8bca-41eb-929f-55d7802f3d39",
+      "name": "Format Results"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Execute Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Query": {
+      "main": [
+        [
+          {
+            "node": "Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "37133f01-45d2-45a2-bf18-d0bab0ea6e33",
+  "meta": {
+    "instanceId": "dcf92cc579a6d1a2cfbdb560f504f87e252dde28a4bf86a53bbe8f919d0f692e"
+  },
+  "id": "X8K2rNHm7UOcY3fW",
+  "tags": []
+}
