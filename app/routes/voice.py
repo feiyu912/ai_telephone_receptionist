@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.client import get_db
@@ -17,6 +18,9 @@ from app.models.schemas import VoiceSession, TenantConfig
 from app.services import llm
 from app.services.faq import match_faq
 from app.services.pii import mask_pii
+from app.services.sms import send_sms, send_call_summary
+from app.services.hubspot import sync_call as hubspot_sync
+from app.services.email import send_voicemail_alert
 from app.prompts.system import build_system_prompt
 from app.config import get_settings
 
@@ -297,17 +301,52 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 sentiment=facts.sentiment,
             )
 
+            # HubSpot sync
+            await hubspot_sync(
+                phone=phone, name=facts.name, email=facts.email,
+                summary=masked_transcript[:500], session_id=call_sid,
+            )
+
             # Check if SMS follow-up needed
+            tenant = await queries.get_tenant_by_id(db, str(tenant_id))
             sms_action = await llm.analyze_sms_action(masked_transcript)
-            if sms_action.get("needs_sms"):
-                await queries.log_analytics_event(
-                    db, tenant_id, "sms_followup_queued", "voice",
-                    phone=phone, session_id=call_sid,
-                    event_data=sms_action,
+            if sms_action.get("needs_sms") and tenant:
+                # Check opt-out before sending
+                opt_out = await db.execute(
+                    text("SELECT 1 FROM opt_outs WHERE phone = :phone AND tenant_id = :tid"),
+                    {"phone": phone, "tid": tenant_id},
                 )
+                if not opt_out.first():
+                    sms_body = sms_action.get("sms_body") or ""
+                    if sms_action.get("sms_type") == "summary":
+                        await send_call_summary(
+                            phone, tenant.phone_number,
+                            masked_transcript[:300], tenant.company_name or "",
+                        )
+                    elif sms_body:
+                        await send_sms(phone, tenant.phone_number, sms_body)
+
+                    await queries.log_analytics_event(
+                        db, tenant_id, "sms_followup_sent", "voice",
+                        phone=phone, session_id=call_sid,
+                        event_data=sms_action,
+                    )
 
         except Exception:
             logger.exception("Post-call processing failed for %s", call_sid)
+
+    # Voicemail email notification
+    if is_voicemail:
+        try:
+            tenant = await queries.get_tenant_by_id(db, str(tenant_id))
+            if tenant and tenant.voicemail_email:
+                await send_voicemail_alert(
+                    to_email=tenant.voicemail_email,
+                    caller_phone=phone,
+                    company_name=tenant.company_name or "",
+                )
+        except Exception:
+            logger.exception("Voicemail email failed for %s", call_sid)
 
     # Log call completed
     await queries.log_analytics_event(
