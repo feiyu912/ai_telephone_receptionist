@@ -47,15 +47,16 @@ async def run_cleanup():
         )
         await db.commit()
 
-        # 4. Log cleanup event
+        # 4. Log cleanup event (no tenant_id — system-wide event)
+        import json
         await db.execute(
             text("""
                 INSERT INTO analytics_events
-                    (event_type, channel, event_data, created_at)
-                VALUES ('memory_cleanup', 'system',
+                    (tenant_id, event_type, channel, event_data, created_at)
+                VALUES (NULL, 'memory_cleanup', 'system',
                     CAST(:data AS jsonb), NOW())
             """),
-            {"data": f'{{"expired_deleted": {expired_count}, "forget_me_deleted": {forget_count}}}'},
+            {"data": json.dumps({"expired_deleted": expired_count, "forget_me_deleted": forget_count})},
         )
         await db.commit()
 

@@ -136,23 +136,29 @@ async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
 # ── Helpers ────────────────────────────────────────────────────────
 
 async def _get_sms_history(db: AsyncSession, tenant_id: str, phone: str) -> list[dict]:
-    """Load recent SMS conversation messages for context."""
+    """Load recent SMS conversation summary for context."""
     result = await db.execute(
         text("""
-            SELECT role, content FROM conversation_messages
-            WHERE tenant_id = :tid AND conversation_id IN (
-                SELECT conversation_id FROM conversations
-                WHERE tenant_id = :tid AND customer_id IN (
-                    SELECT customer_id FROM customers WHERE tenant_id = :tid AND phone = :phone
-                ) AND channel = 'sms'
-                ORDER BY created_at DESC LIMIT 1
-            )
-            ORDER BY created_at ASC
-            LIMIT 20
+            SELECT summary FROM conversations
+            WHERE tenant_id = :tid AND channel = 'sms'
+              AND customer_id IN (
+                SELECT customer_id FROM customers WHERE tenant_id = :tid AND phone = :phone
+              )
+            ORDER BY created_at DESC LIMIT 5
         """),
         {"tid": tenant_id, "phone": phone},
     )
-    return [{"role": r["role"], "content": r["content"]} for r in result.mappings().all()]
+    history = []
+    for r in result.mappings().all():
+        summary = r.get("summary", "")
+        if summary:
+            # Parse "Caller: ...\nAI: ..." format back into messages
+            for line in summary.split("\n"):
+                if line.startswith("Caller: "):
+                    history.append({"role": "user", "content": line[8:]})
+                elif line.startswith("AI: "):
+                    history.append({"role": "assistant", "content": line[4:]})
+    return history[-20:]
 
 
 async def _handle_opt_out(db: AsyncSession, tenant_id: str, phone: str, to_number: str):
