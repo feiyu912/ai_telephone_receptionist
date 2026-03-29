@@ -1,11 +1,25 @@
-"""Raw SQL queries for Supabase PostgreSQL. All multi-tenant with tenant_id."""
+"""Raw SQL queries for Supabase PostgreSQL. All multi-tenant with tenant_id.
+
+Note: Uses CAST(x AS jsonb) instead of x::jsonb because asyncpg interprets
+the :: syntax as named parameters.
+"""
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.schemas import TenantConfig, CallerMemory, VoiceSession
 from typing import Optional
 import json
-from datetime import datetime, timezone
+
+
+def _parse_tenant_row(row) -> TenantConfig:
+    """Convert a DB row to TenantConfig, handling UUID and JSONB fields."""
+    data = dict(row)
+    if "tenant_id" in data and not isinstance(data["tenant_id"], str):
+        data["tenant_id"] = str(data["tenant_id"])
+    for field in ("hunt_group_numbers", "business_hours_days"):
+        if isinstance(data.get(field), str):
+            data[field] = json.loads(data[field])
+    return TenantConfig(**data)
 
 
 # ── Tenant Resolution ──────────────────────────────────────────────
@@ -17,14 +31,7 @@ async def get_tenant_by_phone(db: AsyncSession, phone: str) -> Optional[TenantCo
         {"phone": phone},
     )
     row = result.mappings().first()
-    if not row:
-        return None
-    data = dict(row)
-    # Parse JSONB fields
-    for field in ("hunt_group_numbers", "business_hours_days"):
-        if isinstance(data.get(field), str):
-            data[field] = json.loads(data[field])
-    return TenantConfig(**data)
+    return _parse_tenant_row(row) if row else None
 
 
 async def get_tenant_by_id(db: AsyncSession, tenant_id: str) -> Optional[TenantConfig]:
@@ -34,13 +41,7 @@ async def get_tenant_by_id(db: AsyncSession, tenant_id: str) -> Optional[TenantC
         {"tid": tenant_id},
     )
     row = result.mappings().first()
-    if not row:
-        return None
-    data = dict(row)
-    for field in ("hunt_group_numbers", "business_hours_days"):
-        if isinstance(data.get(field), str):
-            data[field] = json.loads(data[field])
-    return TenantConfig(**data)
+    return _parse_tenant_row(row) if row else None
 
 
 # ── Caller Memory ──────────────────────────────────────────────────
@@ -166,7 +167,7 @@ async def create_voice_session(db: AsyncSession, session: VoiceSession) -> None:
                  conversation_history, session_metadata, status, started_at, last_activity_at, created_at)
             VALUES
                 (:call_sid, :caller_phone, :called_number, :tid, :tier, :voice,
-                 :history::jsonb, :metadata::jsonb, 'active', NOW(), NOW(), NOW())
+                 CAST(:history AS jsonb), CAST(:metadata AS jsonb), 'active', NOW(), NOW(), NOW())
             ON CONFLICT (call_sid) DO NOTHING
         """),
         {
@@ -204,16 +205,16 @@ async def update_voice_session(
     params: dict = {"sid": call_sid}
 
     if conversation_history is not None:
-        sets.append("conversation_history = :history::jsonb")
+        sets.append("conversation_history = CAST(:history AS jsonb)")
         params["history"] = json.dumps(conversation_history)
     if session_metadata is not None:
-        sets.append("session_metadata = :metadata::jsonb")
+        sets.append("session_metadata = CAST(:metadata AS jsonb)")
         params["metadata"] = json.dumps(session_metadata)
     if status is not None:
         sets.append("status = :status")
         params["status"] = status
     if booking_context is not None:
-        sets.append("booking_context = :booking::jsonb")
+        sets.append("booking_context = CAST(:booking AS jsonb)")
         params["booking"] = json.dumps(booking_context)
 
     await db.execute(
@@ -234,12 +235,12 @@ async def upsert_customer(
     result = await db.execute(
         text("""
             INSERT INTO customers (tenant_id, phone, name, email, key_facts, created_at, updated_at)
-            VALUES (:tid, :phone, COALESCE(:name, 'Guest'), :email, COALESCE(:facts::jsonb, '{}'::jsonb), NOW(), NOW())
+            VALUES (:tid, :phone, COALESCE(:name, 'Guest'), :email, COALESCE(CAST(:facts AS jsonb), CAST('{}' AS jsonb)), NOW(), NOW())
             ON CONFLICT (tenant_id, phone)
             DO UPDATE SET
                 name = COALESCE(NULLIF(EXCLUDED.name, 'Guest'), customers.name),
                 email = COALESCE(EXCLUDED.email, customers.email),
-                key_facts = customers.key_facts || COALESCE(EXCLUDED.key_facts, '{}'::jsonb),
+                key_facts = customers.key_facts || COALESCE(EXCLUDED.key_facts, CAST('{}' AS jsonb)),
                 updated_at = NOW()
             RETURNING customer_id
         """),
@@ -315,7 +316,7 @@ async def log_analytics_event(
         text("""
             INSERT INTO analytics_events
                 (tenant_id, event_type, channel, customer_phone, session_id, event_data, created_at)
-            VALUES (:tid, :etype, :channel, :phone, :sid, :data::jsonb, NOW())
+            VALUES (:tid, :etype, :channel, :phone, :sid, CAST(:data AS jsonb), NOW())
         """),
         {
             "tid": tenant_id, "etype": event_type, "channel": channel,

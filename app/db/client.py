@@ -1,5 +1,6 @@
 """Async PostgreSQL connection pool using SQLAlchemy + asyncpg."""
 
+import ssl
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.config import get_settings
 
@@ -11,12 +12,19 @@ def get_engine():
     global _engine
     if _engine is None:
         settings = get_settings()
+        # Create SSL context that doesn't verify hostname (needed when
+        # connecting via IP to bypass WARP DNS or through pooler)
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+
         _engine = create_async_engine(
             settings.database_url,
             pool_size=10,
             max_overflow=20,
             pool_pre_ping=True,
             echo=False,
+            connect_args={"ssl": ssl_ctx},
         )
     return _engine
 

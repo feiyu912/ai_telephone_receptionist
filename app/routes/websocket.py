@@ -31,7 +31,7 @@ async def media_stream(ws: WebSocket, call_sid: str):
     1. Twilio opens WS, sends 'connected' + 'start' events
     2. Audio arrives as 'media' events (base64 mulaw 8kHz)
     3. We pipe audio to Cartesia STT
-    4. On final transcript → GPT-4 → Cartesia TTS → pipe audio back to Twilio
+    4. On final transcript → GPT-4 (with function calling) → Cartesia TTS → audio back
     5. On 'stop' event → trigger post-call processing
     """
     await ws.accept()
@@ -43,20 +43,13 @@ async def media_stream(ws: WebSocket, call_sid: str):
     is_returning: bool = False
     conversation_history: list[dict] = []
     stt_session: STTSession | None = None
-    pending_transcript: str = ""
     processing_lock = asyncio.Lock()
     greeting_sent = False
 
     async def on_transcript(text: str, is_final: bool):
         """Called by STT session when transcription arrives."""
-        nonlocal pending_transcript
-
         if not is_final:
-            # Accumulate partial results
             return
-
-        # Final transcript — process it
-        pending_transcript = text
         asyncio.create_task(_process_speech(text))
 
     async def _process_speech(user_text: str):
@@ -68,7 +61,6 @@ async def media_stream(ws: WebSocket, call_sid: str):
             async with factory() as db:
                 tenant = await queries.get_tenant_by_id(db, tenant_id) if tenant_id else None
                 if not tenant:
-                    # Fallback: load from session
                     session_data = await queries.get_voice_session(db, call_sid)
                     if session_data:
                         tenant = await queries.get_tenant_by_phone(db, session_data.get("called_number", ""))
@@ -83,7 +75,9 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 # Check FAQ first
                 faq_match = match_faq(user_text, faqs)
                 if faq_match:
-                    ai_response = faq_match["answer"]
+                    response_text = faq_match["answer"]
+                    tool_name = None
+                    tool_args = {}
                 else:
                     faq_context = "\n".join(
                         f"Q: {f['question']}\nA: {f['answer']}" for f in faqs[:20]
@@ -92,52 +86,68 @@ async def media_stream(ws: WebSocket, call_sid: str):
                         tenant, memories, is_returning,
                         faq_context=faq_context,
                     )
-                    ai_response = await llm.chat(
+                    result = await llm.chat(
                         system_prompt, conversation_history, user_text
                     )
-
-                # Parse tags
-                action = llm.parse_tags(ai_response)
+                    response_text = result.text
+                    tool_name = result.name
+                    tool_args = result.args
 
                 # Update history
                 conversation_history.append({"role": "user", "content": user_text})
-                conversation_history.append({"role": "assistant", "content": action.clean_text})
+                conversation_history.append({"role": "assistant", "content": response_text})
 
                 # Trim history (Growth=50)
-                max_turns = 50
-                if len(conversation_history) > max_turns:
-                    conversation_history = conversation_history[-max_turns:]
+                if len(conversation_history) > 50:
+                    conversation_history = conversation_history[-50:]
 
                 # Persist session
                 await queries.update_voice_session(
                     db, call_sid, conversation_history=conversation_history,
                 )
 
-                # Stream TTS audio back to Twilio
-                voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
-                await _send_tts(action.clean_text, voice_id)
+                # Handle tool calls
+                if tool_name == "set_memory_consent":
+                    consent = tool_args.get("consent", False)
+                    await queries.save_caller_consent(
+                        db, tenant.tenant_id, caller_phone, consent, "voice"
+                    )
+                elif tool_name == "forget_caller":
+                    await queries.forget_caller(db, tenant.tenant_id, caller_phone)
+                elif tool_name == "save_caller_memory":
+                    key = tool_args.get("key", "")
+                    value = tool_args.get("value", "")
+                    if key and value:
+                        await queries.save_caller_memory(
+                            db, tenant.tenant_id, caller_phone, key, value,
+                            channel="voice", session_id=call_sid,
+                        )
+                elif tool_name == "book_appointment":
+                    await queries.update_voice_session(
+                        db, call_sid,
+                        booking_context={"requested": True, "details": tool_args},
+                    )
 
-                # Handle action tags
-                if action.tag == "END_CALL":
-                    await _close_stream()
-                elif action.tag == "TRANSFER":
-                    # For WebSocket path, we need to signal Twilio to transfer
-                    # This requires closing the stream and using REST API
+                # Determine what to speak
+                speak_text = response_text
+                if tool_name == "end_call":
+                    speak_text = tool_args.get("farewell_message", response_text or "Goodbye!")
+                elif tool_name == "transfer_to_human":
+                    speak_text = tool_args.get("hold_message", "Let me connect you now.")
                     await queries.log_analytics_event(
                         db, tenant.tenant_id, "transfer_requested", "voice",
                         phone=caller_phone, session_id=call_sid,
                     )
+                elif not speak_text and tool_name:
+                    speak_text = "Got it. Is there anything else I can help you with?"
+
+                # Stream TTS audio back to Twilio
+                voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
+                await _send_tts(speak_text, voice_id)
+
+                # Close stream if ending call or transferring
+                if tool_name in ("end_call", "transfer_to_human"):
                     await _close_stream()
-                elif action.tag == "CONSENT_YES":
-                    await queries.save_caller_consent(
-                        db, tenant.tenant_id, caller_phone, True, "voice"
-                    )
-                elif action.tag == "CONSENT_NO":
-                    await queries.save_caller_consent(
-                        db, tenant.tenant_id, caller_phone, False, "voice"
-                    )
-                elif action.tag == "FORGET_ME":
-                    await queries.forget_caller(db, tenant.tenant_id, caller_phone)
 
     async def _send_tts(text: str, voice_id: str):
         """Stream Cartesia TTS audio back to Twilio via WebSocket."""

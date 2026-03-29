@@ -1,9 +1,7 @@
 """Pydantic models for request/response validation."""
 
 from __future__ import annotations
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
+from pydantic import BaseModel, Field
 
 
 class TenantConfig(BaseModel):
@@ -24,8 +22,8 @@ class TenantConfig(BaseModel):
     business_hours_start: int = 9
     business_hours_end: int = 17
     business_hours_timezone: str = "America/Chicago"
-    business_hours_days: list[int] = [1, 2, 3, 4, 5]
-    hunt_group_numbers: list[str] = []
+    business_hours_days: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    hunt_group_numbers: list[str] = Field(default_factory=list)
     transfer_timeout: int = 20
     booking_enabled: bool = False
     booking_duration_minutes: int = 60
@@ -53,8 +51,8 @@ class VoiceSession(BaseModel):
     customer_id: str | None = None
     tier: str = "starter"
     selected_voice: str = "Polly.Matthew-Neural"
-    conversation_history: list[dict] = []
-    session_metadata: dict = {}
+    conversation_history: list[dict] = Field(default_factory=list)
+    session_metadata: dict = Field(default_factory=dict)
     status: str = "active"
 
 
@@ -62,12 +60,6 @@ class ConversationTurn(BaseModel):
     role: str  # "user" or "assistant"
     content: str
     timestamp: str | None = None
-
-
-class TagAction(BaseModel):
-    """Parsed action tags from LLM response."""
-    tag: str | None = None  # END_CALL, TRANSFER, BOOK, CONSENT_YES, CONSENT_NO, FORGET_ME
-    clean_text: str = ""  # Response text with tags removed
 
 
 class ExtractedFacts(BaseModel):

@@ -36,27 +36,20 @@ def build_system_prompt(
     # FAQ block
     faq_block = f"\n\n## FAQ KNOWLEDGE BASE\n{faq_context}" if faq_context else ""
 
-    # Action tags reference
-    tags_block = """
+    # Rules block (no more tag instructions — function calling handles actions)
+    rules_block = """
 
-## ACTION TAGS
-When appropriate, include exactly ONE of these tags at the END of your response:
-- [END_CALL] — when the caller says goodbye or the conversation is complete
-- [TRANSFER] — when the caller asks to speak with a person
-- [BOOK] — when the caller wants to schedule an appointment
-- [CONSENT_YES] — when the caller agrees to memory storage
-- [CONSENT_NO] — when the caller declines memory storage
-- [FORGET_ME] — when the caller requests data deletion (GDPR)
-
-Rules:
+## RULES
 - Pronounce "360" as "three sixty" in speech.
 - For returning callers: verify identity BEFORE using any protected information.
 - For new callers: ask for memory consent after initial introduction.
 - Keep responses concise and conversational — this is a phone call, not a chat.
 - If the caller has not spoken or you cannot understand, ask them to repeat (max 2 retries).
+- You have tools available for actions like ending the call, transferring, booking, saving memory, and handling data deletion. Use them when appropriate.
+- Always speak your response AND call the relevant tool in the same turn when an action is needed.
 """
 
-    return f"{base_prompt}{memory_block}{faq_block}{tags_block}"
+    return f"{base_prompt}{memory_block}{faq_block}{rules_block}"
 
 
 def _default_system_prompt(tenant: TenantConfig) -> str:

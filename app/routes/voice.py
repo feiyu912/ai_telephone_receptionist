@@ -7,7 +7,7 @@ Handles tier-based routing:
 
 from __future__ import annotations
 import logging
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,6 @@ from app.db import queries
 from app.models.schemas import VoiceSession, TenantConfig
 from app.services import llm
 from app.services.faq import match_faq
-from app.services.business_hours import is_within_business_hours
 from app.services.pii import mask_pii
 from app.prompts.system import build_system_prompt
 from app.config import get_settings
@@ -48,7 +47,6 @@ async def incoming_call(request: Request, db: AsyncSession = Depends(get_db)):
     # 2. Load caller memory + check if returning
     memories = await queries.lookup_caller_memory(db, tenant.tenant_id, from_number)
     is_returning = len(memories) > 0
-    consent = await queries.get_caller_consent(db, tenant.tenant_id, from_number)
 
     # 3. Create voice session
     session = VoiceSession(
@@ -68,26 +66,9 @@ async def incoming_call(request: Request, db: AsyncSession = Depends(get_db)):
         event_data={"tier": tenant.tier, "is_returning": is_returning},
     )
 
-    # 5. Business hours check
-    if not is_within_business_hours(tenant):
-        msg = tenant.after_hours_message or (
-            f"Thank you for calling {tenant.company_name or 'us'}. "
-            "We are currently closed. Please leave a message after the tone "
-            "and we will return your call on the next business day."
-        )
-        settings = get_settings()
-        return _twiml_response(
-            f'<Response>'
-            f'<Say voice="{tenant.selected_voice}">{msg}</Say>'
-            f'<Record maxLength="120" '
-            f'action="{settings.base_url}/voice/voicemail?tenant_id={tenant.tenant_id}" '
-            f'transcribe="true"/>'
-            f'</Response>'
-        )
-
-    # 6. Route by tier
+    # 5. Route by tier (AI is 24/7, no business hours check)
     if tenant.tier in ("growth", "pro"):
-        return _websocket_route(tenant, call_sid, is_returning)
+        return _websocket_route(tenant, call_sid, from_number, is_returning)
     else:
         return _starter_route(tenant, is_returning, from_number, memories)
 
@@ -144,64 +125,80 @@ async def starter_gather(request: Request, db: AsyncSession = Depends(get_db)):
     faq_match = match_faq(speech_result, faqs)
 
     if faq_match:
-        ai_response = faq_match["answer"]
+        response_text = faq_match["answer"]
+        tool_name = None
+        tool_args = {}
     else:
-        # Build system prompt and call GPT-4
+        # Build system prompt and call GPT-4 with function calling
         faq_context = "\n".join(f"Q: {f['question']}\nA: {f['answer']}" for f in faqs[:20])
         system_prompt = build_system_prompt(
             tenant, memories, is_returning,
             identity_verified=meta.get("identity_verified", False),
             faq_context=faq_context,
         )
-        ai_response = await llm.chat(system_prompt, history, speech_result)
-
-    # Parse action tags
-    action = llm.parse_tags(ai_response)
+        result = await llm.chat(system_prompt, history, speech_result)
+        response_text = result.text
+        tool_name = result.name
+        tool_args = result.args
 
     # Update conversation history
     history.append({"role": "user", "content": speech_result})
-    history.append({"role": "assistant", "content": action.clean_text})
+    history.append({"role": "assistant", "content": response_text})
 
-    # Apply history limits: Starter=20, Growth=50
-    max_turns = 20
-    if len(history) > max_turns:
-        history = history[-max_turns:]
+    # Apply history limits: Starter=20
+    if len(history) > 20:
+        history = history[-20:]
 
     await queries.update_voice_session(
         db, call_sid, conversation_history=history, session_metadata=meta
     )
 
-    # Handle action tags
+    # Handle tool calls
     settings = get_settings()
 
-    if action.tag == "END_CALL":
+    if tool_name == "end_call":
+        farewell = tool_args.get("farewell_message", response_text or "Goodbye!")
         return _twiml_response(
             f'<Response>'
-            f'<Say voice="{tenant.selected_voice}">{_xml_escape(action.clean_text)}</Say>'
+            f'<Say voice="{tenant.selected_voice}">{_xml_escape(farewell)}</Say>'
             f'<Hangup/></Response>'
         )
 
-    if action.tag == "TRANSFER":
-        return _build_transfer_twiml(tenant, action.clean_text)
+    if tool_name == "transfer_to_human":
+        hold_msg = tool_args.get("hold_message", "Let me connect you now.")
+        return _build_transfer_twiml(tenant, hold_msg)
 
-    if action.tag == "BOOK":
+    if tool_name == "book_appointment":
         await queries.update_voice_session(
             db, call_sid,
-            booking_context={"requested": True, "speech": speech_result},
+            booking_context={"requested": True, "details": tool_args},
         )
 
-    if action.tag == "CONSENT_YES":
-        await queries.save_caller_consent(db, tenant.tenant_id, from_number, True, "voice")
-    elif action.tag == "CONSENT_NO":
-        await queries.save_caller_consent(db, tenant.tenant_id, from_number, False, "voice")
-    elif action.tag == "FORGET_ME":
+    if tool_name == "set_memory_consent":
+        consent = tool_args.get("consent", False)
+        await queries.save_caller_consent(db, tenant.tenant_id, from_number, consent, "voice")
+
+    if tool_name == "forget_caller":
         await queries.forget_caller(db, tenant.tenant_id, from_number)
+
+    if tool_name == "save_caller_memory":
+        key = tool_args.get("key", "")
+        value = tool_args.get("value", "")
+        if key and value:
+            await queries.save_caller_memory(
+                db, tenant.tenant_id, from_number, key, value,
+                channel="voice", session_id=call_sid,
+            )
+
+    # If tool call returned no text, generate a follow-up
+    if not response_text and tool_name:
+        response_text = "Got it. Is there anything else I can help you with?"
 
     # Continue conversation
     return _twiml_response(
         f'<Response><Gather input="speech" timeout="5" speechTimeout="auto" '
         f'action="{settings.base_url}/voice/starter-gather">'
-        f'<Say voice="{tenant.selected_voice}">{_xml_escape(action.clean_text)}</Say>'
+        f'<Say voice="{tenant.selected_voice}">{_xml_escape(response_text)}</Say>'
         f'</Gather></Response>'
     )
 
@@ -214,7 +211,7 @@ async def voicemail(request: Request, db: AsyncSession = Depends(get_db)):
     form = await request.form()
     call_sid = form.get("CallSid", "")
     recording_url = form.get("RecordingUrl", "")
-    tenant_id = form.get("tenant_id", "")
+    tenant_id = form.get("tenant_id", "") or request.query_params.get("tenant_id", "")
 
     if tenant_id and call_sid:
         await queries.log_analytics_event(
@@ -282,7 +279,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 )
 
             # Upsert customer record
-            await queries.upsert_customer(
+            customer_id = await queries.upsert_customer(
                 db, tenant_id, phone,
                 name=facts.name, email=facts.email,
                 key_facts=fact_dict,
@@ -291,7 +288,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
             # Create conversation record
             await queries.create_conversation(
                 db, tenant_id,
-                customer_id=session_data.get("customer_id"),
+                customer_id=customer_id or session_data.get("customer_id"),
                 channel="voice",
                 external_id=call_sid,
                 summary=masked_transcript[:500],
@@ -308,7 +305,6 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     phone=phone, session_id=call_sid,
                     event_data=sms_action,
                 )
-                # TODO: Phase 2 — actually send SMS via Twilio REST API
 
         except Exception:
             logger.exception("Post-call processing failed for %s", call_sid)
@@ -349,7 +345,6 @@ def _starter_route(
     memories: list,
 ) -> Response:
     """Build initial TwiML for Starter tier — greeting + first Gather."""
-    # Build greeting
     if is_returning:
         name_mem = next((m for m in memories if m.memory_key == "name"), None)
         caller_name = name_mem.memory_value if name_mem else None
@@ -375,7 +370,7 @@ def _starter_route(
 
 
 def _websocket_route(
-    tenant: TenantConfig, call_sid: str, is_returning: bool,
+    tenant: TenantConfig, call_sid: str, caller_phone: str, is_returning: bool,
 ) -> Response:
     """Build TwiML for Growth/Pro tier — Connect to WebSocket media stream."""
     settings = get_settings()
@@ -386,7 +381,7 @@ def _websocket_route(
         f'<Connect>'
         f'<Stream url="{ws_url}/ws/media-stream/{call_sid}">'
         f'<Parameter name="tenant_id" value="{tenant.tenant_id}"/>'
-        f'<Parameter name="caller_phone" value=""/>'
+        f'<Parameter name="caller_phone" value="{caller_phone}"/>'
         f'<Parameter name="is_returning" value="{str(is_returning).lower()}"/>'
         f'</Stream>'
         f'</Connect>'
@@ -409,8 +404,7 @@ def _build_transfer_twiml(tenant: TenantConfig, hold_message: str) -> Response:
     return _twiml_response(
         f'<Response>'
         f'<Say voice="{tenant.selected_voice}">{_xml_escape(hold_message)}</Say>'
-        f'<Dial timeout="{tenant.transfer_timeout}" '
-        f'callerId="{{{{From}}}}">'
+        f'<Dial timeout="{tenant.transfer_timeout}">'
         f'{dial_numbers}'
         f'</Dial>'
         f'<Say voice="{tenant.selected_voice}">'
