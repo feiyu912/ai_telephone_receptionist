@@ -155,20 +155,25 @@ async def media_stream(ws: WebSocket, call_sid: str):
         if not stream_sid:
             logger.error("No stream_sid, cannot send TTS")
             return
-        logger.info("TTS starting: text='%s' voice=%s", text[:50], voice_id)
+        logger.info("TTS starting: text='%s' voice=%s stream_sid=%s", text[:50], voice_id, stream_sid)
         chunk_count = 0
+        total_bytes = 0
         try:
             async for audio_chunk in tts_stream(text, voice_id):
                 chunk_count += 1
+                total_bytes += len(audio_chunk)
+                b64_audio = base64.b64encode(audio_chunk).decode("ascii")
                 payload = {
                     "event": "media",
                     "streamSid": stream_sid,
                     "media": {
-                        "payload": base64.b64encode(audio_chunk).decode("ascii"),
+                        "payload": b64_audio,
                     },
                 }
                 await ws.send_json(payload)
-            logger.info("TTS done: sent %d chunks", chunk_count)
+                if chunk_count == 1:
+                    logger.info("TTS first chunk: %d bytes, b64_len=%d", len(audio_chunk), len(b64_audio))
+            logger.info("TTS done: sent %d chunks, %d total bytes", chunk_count, total_bytes)
         except Exception:
             logger.exception("TTS streaming error for call %s (after %d chunks)", call_sid, chunk_count)
 
