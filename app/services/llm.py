@@ -200,7 +200,6 @@ async def chat(
         tools=VOICE_TOOLS,
         tool_choice="auto",
         max_completion_tokens=max_tokens,
-        temperature=0.7,
     )
     return parse_response(response)
 
@@ -222,7 +221,6 @@ async def chat_text_only(
         model=model,
         messages=messages,
         max_completion_tokens=max_tokens,
-        temperature=0.7,
     )
     return response.choices[0].message.content or ""
 
@@ -244,7 +242,6 @@ async def chat_stream(
         model=model,
         messages=messages,
         max_completion_tokens=max_tokens,
-        temperature=0.7,
         stream=True,
     )
     async for chunk in stream:
@@ -265,7 +262,6 @@ async def extract_facts(transcript: str) -> ExtractedFacts:
             {"role": "user", "content": f"Transcript:\n{transcript}"},
         ],
         max_tokens=500,
-        temperature=0.1,
         response_format={"type": "json_object"},
     )
     raw = response.choices[0].message.content or "{}"
@@ -287,7 +283,6 @@ async def analyze_sms_action(transcript: str) -> dict:
             {"role": "user", "content": f"Transcript:\n{transcript}"},
         ],
         max_tokens=300,
-        temperature=0.1,
         response_format={"type": "json_object"},
     )
     raw = response.choices[0].message.content or "{}"
