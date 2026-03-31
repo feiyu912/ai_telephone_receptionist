@@ -59,6 +59,8 @@ app.include_router(whatsapp.router)
 app.include_router(admin.router)
 
 
+@app.get("/")
+@app.head("/")
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "pod6-voice-agent", "version": "0.2.0"}
