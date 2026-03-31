@@ -268,10 +268,10 @@ async def create_conversation(
         text("""
             INSERT INTO conversations
                 (tenant_id, customer_id, channel, external_id, summary, intent, outcome, sentiment,
-                 status, started_at, ended_at, created_at)
+                 status, started_at, ended_at)
             VALUES
                 (:tid, :cid, :channel, :eid, :summary, :intent, :outcome, :sentiment,
-                 'completed', NOW(), NOW(), NOW())
+                 'completed', NOW(), NOW())
             ON CONFLICT (external_id) DO UPDATE SET
                 summary = COALESCE(EXCLUDED.summary, conversations.summary),
                 intent = COALESCE(EXCLUDED.intent, conversations.intent),
