@@ -182,7 +182,7 @@ async def chat(
     system_prompt: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-5-mini",
     max_tokens: int = 300,
 ) -> ToolCall:
     """Send a conversation turn to GPT-4 with function calling.
@@ -209,7 +209,7 @@ async def chat_text_only(
     system_prompt: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-5-mini",
     max_tokens: int = 300,
 ) -> str:
     """Simple text-only chat without function calling (for FAQ responses etc.)."""
@@ -231,7 +231,7 @@ async def chat_stream(
     system_prompt: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-5-mini",
     max_tokens: int = 300,
 ):
     """Stream GPT-4 response token-by-token for low-latency TTS piping."""
