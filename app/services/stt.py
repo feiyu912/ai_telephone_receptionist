@@ -1,12 +1,13 @@
 """Cartesia Ink STT via WebSocket for real-time speech transcription.
 
 Uses the Cartesia STT WebSocket API at wss://api.cartesia.ai/stt/websocket.
-Audio is sent as raw binary frames (pcm_mulaw 8kHz from Twilio).
-Transcripts come back as JSON with is_final flag.
+Twilio sends mulaw 8kHz audio, which we convert to pcm_s16le before sending
+to Cartesia (their recommended format).
 """
 
 from __future__ import annotations
 import asyncio
+import audioop
 import json
 import logging
 from typing import Callable, Awaitable
@@ -38,13 +39,14 @@ class STTSession:
     async def connect(self) -> None:
         settings = get_settings()
 
-        # STT connection uses query params for config
+        # STT connection — use pcm_s16le at 8kHz (Cartesia recommended format)
+        # We convert mulaw→pcm_s16le in send_audio()
         uri = (
             f"{CARTESIA_STT_WS}"
             f"?api_key={settings.cartesia_api_key}"
             f"&model=ink-whisper"
             f"&language={self._language}"
-            f"&encoding=pcm_mulaw"
+            f"&encoding=pcm_s16le"
             f"&sample_rate=8000"
         )
 
@@ -55,10 +57,12 @@ class STTSession:
         self._recv_task = asyncio.create_task(self._receive_loop())
 
     async def send_audio(self, audio_bytes: bytes) -> None:
-        """Send raw audio bytes to Cartesia STT as binary WebSocket frame."""
+        """Convert mulaw audio from Twilio to pcm_s16le and send to Cartesia STT."""
         if self._ws and self._running:
             try:
-                await self._ws.send(audio_bytes)
+                # Convert mulaw 8kHz → pcm_s16le 8kHz
+                pcm_audio = audioop.ulaw2lin(audio_bytes, 2)
+                await self._ws.send(pcm_audio)
             except Exception:
                 logger.debug("Failed to send audio to STT")
 
