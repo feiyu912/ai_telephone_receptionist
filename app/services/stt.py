@@ -1,11 +1,14 @@
-"""Cartesia Ink STT via WebSocket for real-time speech transcription."""
+"""Cartesia Ink STT via WebSocket for real-time speech transcription.
+
+Uses the Cartesia STT WebSocket API at wss://api.cartesia.ai/stt/websocket.
+Audio is sent as raw binary frames (pcm_mulaw 8kHz from Twilio).
+Transcripts come back as JSON with is_final flag.
+"""
 
 from __future__ import annotations
 import asyncio
-import base64
 import json
 import logging
-import uuid
 from typing import Callable, Awaitable
 import websockets
 from app.config import get_settings
@@ -26,11 +29,6 @@ class STTSession:
         on_transcript: Callable[[str, bool], Awaitable[None]],
         language: str = "en",
     ):
-        """
-        Args:
-            on_transcript: async callback(text, is_final) called for each transcript.
-            language: language code for STT.
-        """
         self._on_transcript = on_transcript
         self._language = language
         self._ws: websockets.WebSocketClientProtocol | None = None
@@ -39,37 +37,39 @@ class STTSession:
 
     async def connect(self) -> None:
         settings = get_settings()
-        uri = f"{CARTESIA_STT_WS}?api_key={settings.cartesia_api_key}&cartesia_version=2025-04-16"
+
+        # STT connection uses query params for config
+        uri = (
+            f"{CARTESIA_STT_WS}"
+            f"?api_key={settings.cartesia_api_key}"
+            f"&model=ink-whisper"
+            f"&language={self._language}"
+            f"&encoding=pcm_mulaw"
+            f"&sample_rate=8000"
+        )
 
         self._ws = await websockets.connect(uri)
         self._running = True
-
-        # Send config
-        config = {
-            "context_id": str(uuid.uuid4()),
-            "model_id": "ink",
-            "encoding": "ulaw",
-            "sample_rate": 8000,
-            "language": self._language,
-        }
-        await self._ws.send(json.dumps(config))
 
         # Start receiving transcriptions
         self._recv_task = asyncio.create_task(self._receive_loop())
 
     async def send_audio(self, audio_bytes: bytes) -> None:
-        """Send raw audio chunk to Cartesia STT."""
+        """Send raw audio bytes to Cartesia STT as binary WebSocket frame."""
         if self._ws and self._running:
-            payload = {
-                "type": "audio",
-                "data": base64.b64encode(audio_bytes).decode("ascii"),
-            }
-            await self._ws.send(json.dumps(payload))
+            try:
+                await self._ws.send(audio_bytes)
+            except Exception:
+                logger.debug("Failed to send audio to STT")
 
     async def _receive_loop(self) -> None:
         """Listen for transcription results from Cartesia."""
         try:
             async for msg in self._ws:
+                # STT responses are JSON text messages
+                if isinstance(msg, bytes):
+                    continue
+
                 data = json.loads(msg)
                 msg_type = data.get("type", "")
 
@@ -80,7 +80,11 @@ class STTSession:
                         await self._on_transcript(text, is_final)
 
                 elif msg_type == "error":
-                    logger.error("Cartesia STT error: %s", data)
+                    logger.error("Cartesia STT error: %s", data.get("error", "unknown"))
+
+                elif msg_type == "done":
+                    logger.info("STT session done")
+                    break
 
         except websockets.exceptions.ConnectionClosed:
             logger.info("STT WebSocket closed")
@@ -94,8 +98,8 @@ class STTSession:
         self._running = False
         if self._ws:
             try:
-                # Send end-of-stream
-                await self._ws.send(json.dumps({"type": "end"}))
+                # Send "done" text command to close session cleanly
+                await self._ws.send("done")
                 await self._ws.close()
             except Exception:
                 pass
