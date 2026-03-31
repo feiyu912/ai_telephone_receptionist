@@ -44,6 +44,7 @@ class STTSession:
         uri = (
             f"{CARTESIA_STT_WS}"
             f"?api_key={settings.cartesia_api_key}"
+            f"&cartesia_version=2025-04-16"
             f"&model=ink-whisper"
             f"&language={self._language}"
             f"&encoding=pcm_s16le"
