@@ -199,7 +199,7 @@ async def chat(
         messages=messages,
         tools=VOICE_TOOLS,
         tool_choice="auto",
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         temperature=0.7,
     )
     return parse_response(response)
@@ -221,7 +221,7 @@ async def chat_text_only(
     response = await client.chat.completions.create(
         model=model,
         messages=messages,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         temperature=0.7,
     )
     return response.choices[0].message.content or ""
@@ -243,7 +243,7 @@ async def chat_stream(
     stream = await client.chat.completions.create(
         model=model,
         messages=messages,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         temperature=0.7,
         stream=True,
     )
