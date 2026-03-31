@@ -48,6 +48,7 @@ async def media_stream(ws: WebSocket, call_sid: str):
 
     async def on_transcript(text: str, is_final: bool):
         """Called by STT session when transcription arrives."""
+        logger.info("STT transcript: '%s' is_final=%s", text, is_final)
         if not is_final:
             return
         asyncio.create_task(_process_speech(text))
@@ -152,9 +153,13 @@ async def media_stream(ws: WebSocket, call_sid: str):
     async def _send_tts(text: str, voice_id: str):
         """Stream Cartesia TTS audio back to Twilio via WebSocket."""
         if not stream_sid:
+            logger.error("No stream_sid, cannot send TTS")
             return
+        logger.info("TTS starting: text='%s' voice=%s", text[:50], voice_id)
+        chunk_count = 0
         try:
             async for audio_chunk in tts_stream(text, voice_id):
+                chunk_count += 1
                 payload = {
                     "event": "media",
                     "streamSid": stream_sid,
@@ -163,8 +168,9 @@ async def media_stream(ws: WebSocket, call_sid: str):
                     },
                 }
                 await ws.send_json(payload)
+            logger.info("TTS done: sent %d chunks", chunk_count)
         except Exception:
-            logger.exception("TTS streaming error for call %s", call_sid)
+            logger.exception("TTS streaming error for call %s (after %d chunks)", call_sid, chunk_count)
 
     async def _send_greeting():
         """Send the initial greeting via TTS."""
@@ -172,38 +178,45 @@ async def media_stream(ws: WebSocket, call_sid: str):
         if greeting_sent:
             return
         greeting_sent = True
+        logger.info("Sending greeting for call %s", call_sid)
 
-        factory = get_session_factory()
-        async with factory() as db:
-            session_data = await queries.get_voice_session(db, call_sid)
-            if not session_data:
-                return
+        try:
+            factory = get_session_factory()
+            async with factory() as db:
+                session_data = await queries.get_voice_session(db, call_sid)
+                if not session_data:
+                    logger.error("No session data for greeting: %s", call_sid)
+                    return
 
-            tenant = await queries.get_tenant_by_phone(db, session_data.get("called_number", ""))
-            if not tenant:
-                return
+                tenant = await queries.get_tenant_by_phone(db, session_data.get("called_number", ""))
+                if not tenant:
+                    logger.error("No tenant for greeting: %s", call_sid)
+                    return
 
-            memories = await queries.lookup_caller_memory(db, tenant.tenant_id, caller_phone)
+                memories = await queries.lookup_caller_memory(db, tenant.tenant_id, caller_phone)
 
-            if is_returning:
-                name_mem = next((m for m in memories if m.memory_key == "name"), None)
-                caller_name = name_mem.memory_value if name_mem else None
-                if caller_name and tenant.greeting_returning:
-                    greeting = tenant.greeting_returning.replace("{name}", caller_name)
-                elif caller_name:
-                    greeting = f"Welcome back, {caller_name}! How can I help you today?"
+                if is_returning:
+                    name_mem = next((m for m in memories if m.memory_key == "name"), None)
+                    caller_name = name_mem.memory_value if name_mem else None
+                    if caller_name and tenant.greeting_returning:
+                        greeting = tenant.greeting_returning.replace("{name}", caller_name)
+                    elif caller_name:
+                        greeting = f"Welcome back, {caller_name}! How can I help you today?"
+                    else:
+                        greeting = tenant.greeting_returning or "Welcome back! How can I help you?"
                 else:
-                    greeting = tenant.greeting_returning or "Welcome back! How can I help you?"
-            else:
-                greeting = tenant.greeting_new or (
-                    f"Thank you for calling {tenant.company_name or 'us'}. "
-                    "How can I help you today?"
-                )
+                    greeting = tenant.greeting_new or (
+                        f"Thank you for calling {tenant.company_name or 'us'}. "
+                        "How can I help you today?"
+                    )
 
-            conversation_history.append({"role": "assistant", "content": greeting})
+                logger.info("Greeting text: '%s'", greeting)
+                conversation_history.append({"role": "assistant", "content": greeting})
 
-            voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
-            await _send_tts(greeting, voice_id)
+                voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
+                await _send_tts(greeting, voice_id)
+        except Exception:
+            logger.exception("Greeting failed for call %s", call_sid)
 
     async def _close_stream():
         """Gracefully close the media stream."""
