@@ -94,6 +94,13 @@ async def media_stream(ws: WebSocket, call_sid: str):
                     tool_name = result.name
                     tool_args = result.args
 
+                    # If GPT returned only a tool call with no text,
+                    # generate a text-only follow-up so we have something to speak
+                    if not response_text and tool_name not in ("end_call", "transfer_to_human"):
+                        response_text = await llm.chat_text_only(
+                            system_prompt, conversation_history, user_text
+                        )
+
                 # Update history
                 conversation_history.append({"role": "user", "content": user_text})
                 conversation_history.append({"role": "assistant", "content": response_text})
