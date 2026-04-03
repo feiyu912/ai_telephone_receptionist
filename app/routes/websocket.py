@@ -1,7 +1,12 @@
 """WebSocket media stream handler for Growth/Pro tier.
 
 Twilio <Connect><Stream> sends bidirectional audio via WebSocket.
-This handler bridges Twilio <-> Cartesia STT <-> GPT-4 <-> Cartesia TTS.
+This handler bridges Twilio <-> Cartesia STT <-> GPT-4/5 <-> Cartesia TTS.
+
+Key features:
+- Streaming: GPT tokens → sentence buffer → Cartesia TTS continuation
+- Barge-in: caller speech cancels current TTS and triggers new response
+- Persistent TTS WebSocket for low-latency sentence piping
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.db.client import get_session_factory
 from app.db import queries
 from app.services.stt import STTSession
-from app.services.tts import tts_stream, VOICE_MAP, DEFAULT_VOICE_ID
+from app.services.tts import TTSContext, extract_sentences, tts_stream, VOICE_MAP, DEFAULT_VOICE_ID
 from app.services import llm
 from app.services.faq import match_faq
 from app.prompts.system import build_system_prompt
@@ -25,15 +30,6 @@ router = APIRouter(tags=["websocket"])
 
 @router.websocket("/ws/media-stream/{call_sid}")
 async def media_stream(ws: WebSocket, call_sid: str):
-    """Handle Twilio Media Stream WebSocket for a single call.
-
-    Flow:
-    1. Twilio opens WS, sends 'connected' + 'start' events
-    2. Audio arrives as 'media' events (base64 mulaw 8kHz)
-    3. We pipe audio to Cartesia STT
-    4. On final transcript → GPT-4 (with function calling) → Cartesia TTS → audio back
-    5. On 'stop' event → trigger post-call processing
-    """
     await ws.accept()
 
     # Session state
@@ -43,19 +39,51 @@ async def media_stream(ws: WebSocket, call_sid: str):
     is_returning: bool = False
     conversation_history: list[dict] = []
     stt_session: STTSession | None = None
+    tts_ctx: TTSContext | None = None
     processing_lock = asyncio.Lock()
     greeting_sent = False
+    is_speaking = False  # True when TTS is playing
+
+    async def send_audio_to_twilio(audio_bytes: bytes):
+        """Callback: pipe TTS audio chunk to Twilio."""
+        if not stream_sid:
+            return
+        payload = {
+            "event": "media",
+            "streamSid": stream_sid,
+            "media": {
+                "payload": base64.b64encode(audio_bytes).decode("ascii"),
+            },
+        }
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
 
     async def on_transcript(text: str, is_final: bool):
-        """Called by STT session when transcription arrives."""
-        logger.info("STT transcript: '%s' is_final=%s", text, is_final)
+        """Called by STT when transcription arrives."""
+        nonlocal is_speaking
+        logger.info("STT: '%s' final=%s speaking=%s", text, is_final, is_speaking)
+
+        # Barge-in: if caller speaks while TTS is playing, cancel TTS
+        if is_speaking and is_final and tts_ctx:
+            logger.info("Barge-in detected, cancelling TTS")
+            await tts_ctx.cancel()
+            is_speaking = False
+            # Also clear Twilio's audio buffer
+            if stream_sid:
+                try:
+                    await ws.send_json({"event": "clear", "streamSid": stream_sid})
+                except Exception:
+                    pass
+
         if not is_final:
             return
         asyncio.create_task(_process_speech(text))
 
     async def _process_speech(user_text: str):
-        """Process final STT transcript: FAQ check → GPT-4 → TTS → send audio."""
-        nonlocal conversation_history
+        """Stream GPT response sentence-by-sentence to TTS."""
+        nonlocal conversation_history, is_speaking
 
         async with processing_lock:
             factory = get_session_factory()
@@ -65,9 +93,8 @@ async def media_stream(ws: WebSocket, call_sid: str):
                     session_data = await queries.get_voice_session(db, call_sid)
                     if session_data:
                         tenant = await queries.get_tenant_by_phone(db, session_data.get("called_number", ""))
-
                 if not tenant:
-                    logger.error("No tenant for WS call %s", call_sid)
+                    logger.error("No tenant for call %s", call_sid)
                     return
 
                 memories = await queries.lookup_caller_memory(db, tenant.tenant_id, caller_phone)
@@ -76,10 +103,19 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 # Check FAQ first
                 faq_match = match_faq(user_text, faqs)
                 if faq_match:
+                    # FAQ match: send directly to TTS
                     response_text = faq_match["answer"]
-                    tool_name = None
-                    tool_args = {}
+                    conversation_history.append({"role": "user", "content": user_text})
+                    conversation_history.append({"role": "assistant", "content": response_text})
+                    if tts_ctx:
+                        tts_ctx.new_turn()
+                        is_speaking = True
+                        await tts_ctx.send_sentence(response_text, more_coming=False)
+                        # Wait a bit for audio to finish
+                        await asyncio.sleep(0.5)
+                        is_speaking = False
                 else:
+                    # Stream GPT → sentence buffer → TTS
                     faq_context = "\n".join(
                         f"Q: {f['question']}\nA: {f['answer']}" for f in faqs[:20]
                     )
@@ -87,25 +123,51 @@ async def media_stream(ws: WebSocket, call_sid: str):
                         tenant, memories, is_returning,
                         faq_context=faq_context,
                     )
-                    result = await llm.chat(
-                        system_prompt, conversation_history, user_text
-                    )
-                    response_text = result.text
-                    tool_name = result.name
-                    tool_args = result.args
 
-                    # If GPT returned only a tool call with no text,
-                    # generate a text-only follow-up so we have something to speak
-                    if not response_text and tool_name not in ("end_call", "transfer_to_human"):
-                        response_text = await llm.chat_text_only(
+                    if tts_ctx:
+                        tts_ctx.new_turn()
+
+                    is_speaking = True
+                    full_response = ""
+                    sentence_buffer = ""
+
+                    try:
+                        async for token in llm.chat_stream(
                             system_prompt, conversation_history, user_text
-                        )
+                        ):
+                            full_response += token
+                            sentence_buffer += token
 
-                # Update history
-                conversation_history.append({"role": "user", "content": user_text})
-                conversation_history.append({"role": "assistant", "content": response_text})
+                            # Check for complete sentences
+                            sentences, sentence_buffer = extract_sentences(sentence_buffer)
+                            for sentence in sentences:
+                                if tts_ctx and sentence.strip():
+                                    logger.info("Streaming sentence to TTS: '%s'", sentence[:50])
+                                    await tts_ctx.send_sentence(sentence, more_coming=True)
 
-                # Trim history (Growth=50)
+                        # Send remaining buffer as final sentence
+                        if sentence_buffer.strip() and tts_ctx:
+                            logger.info("Streaming final to TTS: '%s'", sentence_buffer.strip()[:50])
+                            await tts_ctx.send_sentence(sentence_buffer.strip(), more_coming=False)
+
+                    except Exception:
+                        logger.exception("GPT streaming error for %s", call_sid)
+                        # Fallback: if streaming failed, try non-streaming
+                        if not full_response:
+                            result = await llm.chat(system_prompt, conversation_history, user_text)
+                            full_response = result.text or "I'm sorry, could you repeat that?"
+                            if tts_ctx:
+                                await tts_ctx.send_sentence(full_response, more_coming=False)
+
+                    # Wait for TTS to finish playing
+                    await asyncio.sleep(1.0)
+                    is_speaking = False
+
+                    response_text = full_response
+                    conversation_history.append({"role": "user", "content": user_text})
+                    conversation_history.append({"role": "assistant", "content": response_text})
+
+                # Trim history
                 if len(conversation_history) > 50:
                     conversation_history = conversation_history[-50:]
 
@@ -114,79 +176,9 @@ async def media_stream(ws: WebSocket, call_sid: str):
                     db, call_sid, conversation_history=conversation_history,
                 )
 
-                # Handle tool calls
-                if tool_name == "set_memory_consent":
-                    consent = tool_args.get("consent", False)
-                    await queries.save_caller_consent(
-                        db, tenant.tenant_id, caller_phone, consent, "voice"
-                    )
-                elif tool_name == "forget_caller":
-                    await queries.forget_caller(db, tenant.tenant_id, caller_phone)
-                elif tool_name == "save_caller_memory":
-                    key = tool_args.get("key", "")
-                    value = tool_args.get("value", "")
-                    if key and value:
-                        await queries.save_caller_memory(
-                            db, tenant.tenant_id, caller_phone, key, value,
-                            channel="voice", session_id=call_sid,
-                        )
-                elif tool_name == "book_appointment":
-                    await queries.update_voice_session(
-                        db, call_sid,
-                        booking_context={"requested": True, "details": tool_args},
-                    )
-
-                # Determine what to speak
-                speak_text = response_text
-                if tool_name == "end_call":
-                    speak_text = tool_args.get("farewell_message", response_text or "Goodbye!")
-                elif tool_name == "transfer_to_human":
-                    speak_text = tool_args.get("hold_message", "Let me connect you now.")
-                    await queries.log_analytics_event(
-                        db, tenant.tenant_id, "transfer_requested", "voice",
-                        phone=caller_phone, session_id=call_sid,
-                    )
-                elif not speak_text and tool_name:
-                    speak_text = "Got it. Is there anything else I can help you with?"
-
-                # Stream TTS audio back to Twilio
-                voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
-                await _send_tts(speak_text, voice_id)
-
-                # Close stream if ending call or transferring
-                if tool_name in ("end_call", "transfer_to_human"):
-                    await _close_stream()
-
-    async def _send_tts(text: str, voice_id: str):
-        """Stream Cartesia TTS audio back to Twilio via WebSocket."""
-        if not stream_sid:
-            logger.error("No stream_sid, cannot send TTS")
-            return
-        logger.info("TTS starting: text='%s' voice=%s stream_sid=%s", text[:50], voice_id, stream_sid)
-        chunk_count = 0
-        total_bytes = 0
-        try:
-            async for audio_chunk in tts_stream(text, voice_id):
-                chunk_count += 1
-                total_bytes += len(audio_chunk)
-                b64_audio = base64.b64encode(audio_chunk).decode("ascii")
-                payload = {
-                    "event": "media",
-                    "streamSid": stream_sid,
-                    "media": {
-                        "payload": b64_audio,
-                    },
-                }
-                await ws.send_json(payload)
-                if chunk_count == 1:
-                    logger.info("TTS first chunk: %d bytes, b64_len=%d", len(audio_chunk), len(b64_audio))
-            logger.info("TTS done: sent %d chunks, %d total bytes", chunk_count, total_bytes)
-        except Exception:
-            logger.exception("TTS streaming error for call %s (after %d chunks)", call_sid, chunk_count)
-
     async def _send_greeting():
-        """Send the initial greeting via TTS."""
-        nonlocal greeting_sent
+        """Send initial greeting via one-shot TTS."""
+        nonlocal greeting_sent, is_speaking
         if greeting_sent:
             return
         greeting_sent = True
@@ -197,7 +189,7 @@ async def media_stream(ws: WebSocket, call_sid: str):
             async with factory() as db:
                 session_data = await queries.get_voice_session(db, call_sid)
                 if not session_data:
-                    logger.error("No session data for greeting: %s", call_sid)
+                    logger.error("No session for greeting: %s", call_sid)
                     return
 
                 tenant = await queries.get_tenant_by_phone(db, session_data.get("called_number", ""))
@@ -222,20 +214,20 @@ async def media_stream(ws: WebSocket, call_sid: str):
                         "How can I help you today?"
                     )
 
-                logger.info("Greeting text: '%s'", greeting)
+                logger.info("Greeting: '%s'", greeting)
                 conversation_history.append({"role": "assistant", "content": greeting})
 
+                # Use one-shot TTS for greeting (simpler)
+                is_speaking = True
                 voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
-                await _send_tts(greeting, voice_id)
-        except Exception:
-            logger.exception("Greeting failed for call %s", call_sid)
+                async for audio_chunk in tts_stream(greeting, voice_id):
+                    await send_audio_to_twilio(audio_chunk)
+                is_speaking = False
+                logger.info("Greeting sent")
 
-    async def _close_stream():
-        """Gracefully close the media stream."""
-        try:
-            await ws.send_json({"event": "stop", "streamSid": stream_sid})
         except Exception:
-            pass
+            logger.exception("Greeting failed for %s", call_sid)
+            is_speaking = False
 
     # ── Main WebSocket message loop ────────────────────────────────
 
@@ -264,11 +256,24 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 stt_session = STTSession(on_transcript=on_transcript)
                 await stt_session.connect()
 
+                # Set up persistent TTS context for streaming
+                voice_id = DEFAULT_VOICE_ID
+                # Load tenant voice preference
+                try:
+                    factory = get_session_factory()
+                    async with factory() as db:
+                        tenant = await queries.get_tenant_by_id(db, tenant_id)
+                        if tenant:
+                            voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
+                except Exception:
+                    pass
+                tts_ctx = TTSContext(voice_id=voice_id, on_audio=send_audio_to_twilio)
+                await tts_ctx.connect()
+
                 # Send greeting
                 asyncio.create_task(_send_greeting())
 
             elif event == "media":
-                # Forward audio to STT
                 if stt_session:
                     audio_b64 = msg.get("media", {}).get("payload", "")
                     if audio_b64:
@@ -284,11 +289,11 @@ async def media_stream(ws: WebSocket, call_sid: str):
     except Exception:
         logger.exception("WebSocket error: %s", call_sid)
     finally:
-        # Cleanup
         if stt_session:
             await stt_session.close()
+        if tts_ctx:
+            await tts_ctx.close()
 
-        # Save final session state
         try:
             factory = get_session_factory()
             async with factory() as db:
@@ -298,4 +303,4 @@ async def media_stream(ws: WebSocket, call_sid: str):
                     status="closed",
                 )
         except Exception:
-            logger.exception("Failed to save final session state: %s", call_sid)
+            logger.exception("Failed to save session: %s", call_sid)

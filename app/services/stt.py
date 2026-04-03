@@ -79,7 +79,7 @@ class STTSession:
                 msg_type = data.get("type", "")
 
                 if msg_type == "transcript":
-                    text = data.get("text", "").strip()
+                    text = data.get("data", "").strip()
                     is_final = data.get("is_final", False)
                     if text:
                         await self._on_transcript(text, is_final)
@@ -103,7 +103,7 @@ class STTSession:
         self._running = False
         if self._ws:
             try:
-                # Send "done" text command to close session cleanly
+                await self._ws.send("finalize")
                 await self._ws.send("done")
                 await self._ws.close()
             except Exception:
