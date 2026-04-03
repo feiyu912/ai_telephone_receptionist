@@ -44,9 +44,13 @@ async def media_stream(ws: WebSocket, call_sid: str):
     greeting_sent = False
     is_speaking = False  # True when TTS is playing
 
+    audio_chunks_sent = 0
+
     async def send_audio_to_twilio(audio_bytes: bytes):
         """Callback: pipe TTS audio chunk to Twilio."""
+        nonlocal audio_chunks_sent
         if not stream_sid:
+            logger.warning("No stream_sid, dropping audio chunk")
             return
         payload = {
             "event": "media",
@@ -57,8 +61,11 @@ async def media_stream(ws: WebSocket, call_sid: str):
         }
         try:
             await ws.send_json(payload)
+            audio_chunks_sent += 1
+            if audio_chunks_sent == 1:
+                logger.info("First audio chunk sent to Twilio: %d bytes", len(audio_bytes))
         except Exception:
-            pass
+            logger.exception("Failed to send audio to Twilio")
 
     async def on_transcript(text: str, is_final: bool):
         """Called by STT when transcription arrives."""
@@ -220,10 +227,12 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 # Use one-shot TTS for greeting (simpler)
                 is_speaking = True
                 voice_id = VOICE_MAP.get(tenant.selected_voice, DEFAULT_VOICE_ID)
+                chunk_count = 0
                 async for audio_chunk in tts_stream(greeting, voice_id):
                     await send_audio_to_twilio(audio_chunk)
+                    chunk_count += 1
                 is_speaking = False
-                logger.info("Greeting sent")
+                logger.info("Greeting sent: %d TTS chunks, %d sent to Twilio", chunk_count, audio_chunks_sent)
 
         except Exception:
             logger.exception("Greeting failed for %s", call_sid)
