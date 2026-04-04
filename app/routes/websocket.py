@@ -254,7 +254,27 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     return "Transferring."
                 elif name == "book_appointment":
                     await queries.update_voice_session(db, call_sid, booking_context={"requested": True, "details": args})
-                    return f"Appointment noted for {args.get('preferred_date', '')} at {args.get('preferred_time', '')}."
+                    # Try to book via Outlook Calendar
+                    from app.services.calendar import book_appointment
+                    from app.config import get_settings as gs
+                    cal_email = gs().ms_calendar_email
+                    if cal_email:
+                        result = await book_appointment(
+                            calendar_email=cal_email,
+                            caller_phone=caller_phone,
+                            caller_name=args.get("caller_name"),
+                            caller_email=args.get("caller_email"),
+                            preferred_date=args.get("preferred_date", ""),
+                            preferred_time=args.get("preferred_time", ""),
+                            purpose=args.get("purpose", "Consultation"),
+                        )
+                        if result.get("success"):
+                            return f"Appointment booked for {result['slot']}. Confirm with the caller."
+                        elif result.get("available_slots"):
+                            slots_str = ", ".join(s["start"] for s in result["available_slots"])
+                            return f"That time is not available. Available slots: {slots_str}. Ask the caller which they prefer."
+                        return result.get("message", "Could not book. Ask caller to try another date.")
+                    return f"Appointment noted for {args.get('preferred_date', '')} at {args.get('preferred_time', '')}. Calendar not configured yet."
                 elif name == "save_caller_memory":
                     key, value = args.get("key", ""), args.get("value", "")
                     if key and value:

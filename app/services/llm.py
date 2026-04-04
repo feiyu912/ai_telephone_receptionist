@@ -256,7 +256,7 @@ async def extract_facts(transcript: str) -> ExtractedFacts:
     """Extract caller facts from a conversation transcript."""
     client = _get_client()
     response = await client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": build_fact_extraction_prompt()},
             {"role": "user", "content": f"Transcript:\n{transcript}"},
@@ -277,7 +277,7 @@ async def analyze_sms_action(transcript: str) -> dict:
     """Analyze transcript to determine if SMS/calendar follow-up is needed."""
     client = _get_client()
     response = await client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": build_sms_analysis_prompt()},
             {"role": "user", "content": f"Transcript:\n{transcript}"},

@@ -251,9 +251,11 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Close session
     await queries.update_voice_session(db, call_sid, status="closed")
 
-    tenant_id = session_data["tenant_id"]
+    tenant_id = str(session_data["tenant_id"])
     phone = session_data["caller_phone"]
     history = session_data.get("conversation_history", [])
+    if not history:
+        history = []
 
     # Check if voicemail (no user turns)
     user_turns = sum(1 for h in history if h.get("role") == "user")

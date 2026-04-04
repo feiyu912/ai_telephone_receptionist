@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # --- HubSpot ---
     hubspot_access_token: str = ""
 
+    # --- Microsoft Graph (Outlook Calendar) ---
+    ms_tenant_id: str = ""
+    ms_client_id: str = ""
+    ms_client_secret: str = ""
+    ms_calendar_email: str = ""
+
     # --- SMTP (email notifications) ---
     smtp_host: str = ""
     smtp_port: int = 587
