@@ -38,8 +38,11 @@ async def media_stream(ws: WebSocket, call_sid: str):
     # Lock for safe concurrent writes to Twilio WebSocket
     ws_write_lock = asyncio.Lock()
 
+    audio_out_count = 0
+
     async def on_realtime_audio(audio_b64: str):
         """Forward OpenAI Realtime audio to Twilio."""
+        nonlocal audio_out_count
         if stream_sid:
             async with ws_write_lock:
                 try:
@@ -48,8 +51,11 @@ async def media_stream(ws: WebSocket, call_sid: str):
                         "streamSid": stream_sid,
                         "media": {"payload": audio_b64},
                     }))
+                    audio_out_count += 1
+                    if audio_out_count == 1:
+                        logger.info("First audio out to Twilio: %d bytes b64", len(audio_b64))
                 except Exception:
-                    pass
+                    logger.exception("Failed to send audio to Twilio")
 
     async def on_transcript(role: str, text: str):
         """Track conversation transcripts for post-call processing."""
