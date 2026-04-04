@@ -43,6 +43,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini",
         additional_headers={
             "Authorization": f"Bearer {settings.openai_api_key}",
+            "OpenAI-Beta": "realtime=v1",
         },
     ) as openai_ws:
 
@@ -55,24 +56,16 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         conversation_history: list[dict] = []
 
         async def initialize_session():
-            """Configure the OpenAI Realtime session — matches official Twilio example."""
+            """Configure the OpenAI Realtime session (beta format — proven with Twilio)."""
             session_update = {
                 "type": "session.update",
                 "session": {
-                    "type": "realtime",
-                    "model": "gpt-realtime-mini",
-                    "output_modalities": ["audio"],
-                    "audio": {
-                        "input": {
-                            "format": {"type": "audio/pcmu"},
-                            "turn_detection": {"type": "server_vad"},
-                        },
-                        "output": {
-                            "format": {"type": "audio/pcmu"},
-                            "voice": "alloy",
-                        },
-                    },
+                    "turn_detection": {"type": "server_vad"},
+                    "input_audio_format": "g711_ulaw",
+                    "output_audio_format": "g711_ulaw",
+                    "voice": "alloy",
                     "instructions": system_prompt,
+                    "modalities": ["text", "audio"],
                     "tools": [{"type": "function", **t["function"]} for t in VOICE_TOOLS],
                 },
             }
@@ -177,12 +170,12 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     event_type = response.get("type", "")
 
                     # Log all event types for debugging
-                    if "audio" in event_type or event_type not in ("response.output_audio.delta",):
-                        if event_type != "response.output_audio.delta":
+                    if "audio" in event_type or event_type not in ("response.audio.delta",):
+                        if event_type != "response.audio.delta":
                             logger.info("OpenAI event: %s", event_type)
 
                     # Forward audio to Twilio — exactly matching official example
-                    if response.get("type") == "response.output_audio.delta" and "delta" in response:
+                    if response.get("type") == "response.audio.delta" and "delta" in response:
                         audio_chunks += 1
                         audio_payload = base64.b64encode(
                             base64.b64decode(response["delta"])
@@ -210,7 +203,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             mark_queue.append("responsePart")
 
                     # Transcript of what AI said
-                    elif event_type == "response.output_audio_transcript.done":
+                    elif event_type == "response.audio_transcript.done":
                         transcript = response.get("transcript", "")
                         if transcript:
                             logger.info("AI said: %s", transcript[:80])
