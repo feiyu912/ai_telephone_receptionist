@@ -40,7 +40,7 @@ def build_system_prompt(
     rules_block = """
 
 ## RULES
-- Pronounce "360" as "three sixty" in speech.
+- IMPORTANT: Pronounce "360" as "three six zero" (each digit separately), NOT "three sixty" or "three hundred sixty".
 - For returning callers: verify identity BEFORE using any protected information.
 - For new callers: ask for memory consent after initial introduction.
 - Keep responses concise and conversational — this is a phone call, not a chat.
