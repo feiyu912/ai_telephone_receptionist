@@ -10,6 +10,7 @@ Two concurrent tasks via asyncio.gather():
 
 from __future__ import annotations
 import asyncio
+import base64
 import json
 import logging
 import websockets
@@ -54,26 +55,24 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         conversation_history: list[dict] = []
 
         async def initialize_session():
-            """Configure the OpenAI Realtime session (GA API format)."""
+            """Configure the OpenAI Realtime session — matches official Twilio example."""
             session_update = {
                 "type": "session.update",
                 "session": {
                     "type": "realtime",
                     "model": "gpt-realtime-mini",
-                    "instructions": system_prompt,
+                    "output_modalities": ["audio"],
                     "audio": {
                         "input": {
                             "format": {"type": "audio/pcmu"},
                             "turn_detection": {"type": "server_vad"},
-                            "transcription": {
-                                "model": "gpt-4o-mini-transcribe",
-                            },
                         },
                         "output": {
                             "format": {"type": "audio/pcmu"},
                             "voice": "alloy",
                         },
                     },
+                    "instructions": system_prompt,
                     "tools": [{"type": "function", **t["function"]} for t in VOICE_TOOLS],
                 },
             }
@@ -182,21 +181,19 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                         if event_type != "response.output_audio.delta":
                             logger.info("OpenAI event: %s", event_type)
 
-                    # Forward audio to Twilio
-                    if event_type == "response.output_audio.delta" and "delta" in response:
+                    # Forward audio to Twilio — exactly matching official example
+                    if response.get("type") == "response.output_audio.delta" and "delta" in response:
                         audio_chunks += 1
-                        audio_payload = response["delta"]
-                        try:
-                            await websocket.send_text(json.dumps({
-                                "event": "media",
-                                "streamSid": stream_sid,
-                                "media": {"payload": audio_payload},
-                            }))
-                            if audio_chunks == 1:
-                                logger.info("First audio sent to Twilio: %d chars payload, streamSid=%s", len(audio_payload), stream_sid)
-                        except Exception as e:
-                            logger.error("SEND FAILED on chunk %d: %s", audio_chunks, e)
-                            break
+                        audio_payload = base64.b64encode(
+                            base64.b64decode(response["delta"])
+                        ).decode("utf-8")
+                        await websocket.send_json({
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {"payload": audio_payload},
+                        })
+                        if audio_chunks == 1:
+                            logger.info("First audio sent to Twilio: %d chars", len(audio_payload))
 
                         # Track response timing for interruption
                         if response.get("item_id") and response["item_id"] != last_assistant_item:
@@ -205,11 +202,11 @@ async def media_stream(websocket: WebSocket, call_sid: str):
 
                         # Send mark after each audio chunk
                         if stream_sid:
-                            await websocket.send_text(json.dumps({
+                            await websocket.send_json({
                                 "event": "mark",
                                 "streamSid": stream_sid,
                                 "mark": {"name": "responsePart"},
-                            }))
+                            })
                             mark_queue.append("responsePart")
 
                     # Transcript of what AI said
@@ -242,10 +239,10 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                                     "content_index": 0,
                                     "audio_end_ms": elapsed,
                                 }))
-                            await websocket.send_text(json.dumps({
+                            await websocket.send_json({
                                 "event": "clear",
                                 "streamSid": stream_sid,
-                            }))
+                            })
                             mark_queue.clear()
                             last_assistant_item = None
                             response_start_timestamp_twilio = None
