@@ -174,6 +174,13 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             "streamSid": stream_sid,
                             "media": {"payload": audio_payload},
                         })
+                        if not hasattr(send_to_twilio, '_count'):
+                            send_to_twilio._count = 0
+                        send_to_twilio._count += 1
+                        if send_to_twilio._count == 1:
+                            logger.info("AUDIO SENT to Twilio: first chunk %d chars, streamSid=%s", len(audio_payload), stream_sid)
+                        elif send_to_twilio._count % 50 == 0:
+                            logger.info("AUDIO SENT to Twilio: %d chunks total", send_to_twilio._count)
 
                         if response.get("item_id") and response["item_id"] != last_assistant_item:
                             response_start_timestamp_twilio = latest_media_timestamp
