@@ -135,11 +135,6 @@ class RealtimeSession:
                 if event_type == "response.audio.delta":
                     audio_b64 = data.get("delta", "")
                     if audio_b64:
-                        if not hasattr(self, '_audio_delta_count'):
-                            self._audio_delta_count = 0
-                        self._audio_delta_count += 1
-                        if self._audio_delta_count == 1:
-                            logger.info("First audio delta from Realtime: %d bytes", len(audio_b64))
                         await self._on_audio(audio_b64)
 
                 # Transcript of what AI said

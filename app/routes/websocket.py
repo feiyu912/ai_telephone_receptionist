@@ -35,27 +35,27 @@ async def media_stream(ws: WebSocket, call_sid: str):
     conversation_history: list[dict] = []
     realtime: RealtimeSession | None = None
 
-    # Lock for safe concurrent writes to Twilio WebSocket
-    ws_write_lock = asyncio.Lock()
+    # Outbound queue for safe concurrent writes
+    outbound_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
-    audio_out_count = 0
+    async def outbound_sender():
+        while True:
+            msg = await outbound_queue.get()
+            if msg is None:
+                break
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                break
 
     async def on_realtime_audio(audio_b64: str):
         """Forward OpenAI Realtime audio to Twilio."""
-        nonlocal audio_out_count
         if stream_sid:
-            async with ws_write_lock:
-                try:
-                    await ws.send_text(json.dumps({
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {"payload": audio_b64},
-                    }))
-                    audio_out_count += 1
-                    if audio_out_count == 1:
-                        logger.info("First audio out to Twilio: %d bytes b64", len(audio_b64))
-                except Exception:
-                    logger.exception("Failed to send audio to Twilio")
+            await outbound_queue.put({
+                "event": "media",
+                "streamSid": stream_sid,
+                "media": {"payload": audio_b64},
+            })
 
     async def on_transcript(role: str, text: str):
         """Track conversation transcripts for post-call processing."""
@@ -110,6 +110,8 @@ async def media_stream(ws: WebSocket, call_sid: str):
             return "Unknown tool."
 
     # ── Main loop ──────────────────────────────────────────────────
+
+    sender_task = asyncio.create_task(outbound_sender())
 
     try:
         async for raw in ws.iter_text():
@@ -189,6 +191,9 @@ async def media_stream(ws: WebSocket, call_sid: str):
     except Exception:
         logger.exception("WebSocket error: %s", call_sid)
     finally:
+        await outbound_queue.put(None)
+        sender_task.cancel()
+
         if realtime:
             await realtime.close()
 
