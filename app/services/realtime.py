@@ -84,7 +84,7 @@ class RealtimeSession:
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 500,
                 },
-                "tools": [t["function"] for t in VOICE_TOOLS],
+                "tools": [{"type": "function", **t["function"]} for t in VOICE_TOOLS],
                 "modalities": ["text", "audio"],
             },
         })
