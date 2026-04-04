@@ -79,7 +79,7 @@ class STTSession:
                 msg_type = data.get("type", "")
 
                 if msg_type == "transcript":
-                    text = data.get("data", "").strip()
+                    text = (data.get("text") or data.get("data") or "").strip()
                     is_final = data.get("is_final", False)
                     if text:
                         await self._on_transcript(text, is_final)

@@ -58,8 +58,11 @@ async def media_stream(ws: WebSocket, call_sid: str):
             except Exception:
                 break
 
+    audio_mark_counter = 0
+
     async def queue_audio(audio_bytes: bytes):
         """Queue a TTS audio chunk for sending to Twilio."""
+        nonlocal audio_mark_counter
         if not stream_sid:
             return
         await outbound_queue.put({
@@ -68,6 +71,18 @@ async def media_stream(ws: WebSocket, call_sid: str):
             "media": {
                 "payload": base64.b64encode(audio_bytes).decode("ascii"),
             },
+        })
+
+    async def queue_mark():
+        """Queue a mark event after sending audio (helps Twilio flush playback)."""
+        nonlocal audio_mark_counter
+        if not stream_sid:
+            return
+        audio_mark_counter += 1
+        await outbound_queue.put({
+            "event": "mark",
+            "streamSid": stream_sid,
+            "mark": {"name": f"audio_{audio_mark_counter}"},
         })
 
     async def on_transcript(text: str, is_final: bool):
@@ -202,6 +217,7 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 async for audio_chunk in tts_stream(greeting, voice_id):
                     await queue_audio(audio_chunk)
                     chunk_count += 1
+                await queue_mark()
                 is_speaking = False
                 logger.info("Greeting queued: %d chunks", chunk_count)
 
