@@ -1,11 +1,7 @@
 """WebSocket media stream handler for Growth/Pro tier.
 
 Uses OpenAI Realtime API (gpt-realtime-mini) for sub-second latency.
-No separate STT/TTS needed — audio in, audio out, all in one model.
-
-Flow:
-  Twilio mulaw audio → OpenAI Realtime → mulaw audio → Twilio
-  (direct passthrough, no audio conversion)
+Single-task WebSocket handling to avoid concurrent read/write issues.
 """
 
 from __future__ import annotations
@@ -13,7 +9,6 @@ import asyncio
 import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
 from app.db.client import get_session_factory
 from app.db import queries
 from app.services.realtime import RealtimeSession
@@ -35,83 +30,48 @@ async def media_stream(ws: WebSocket, call_sid: str):
     conversation_history: list[dict] = []
     realtime: RealtimeSession | None = None
 
-    # Outbound queue for safe concurrent writes
-    outbound_queue: asyncio.Queue[dict | None] = asyncio.Queue()
-
-    async def outbound_sender():
-        while True:
-            msg = await outbound_queue.get()
-            if msg is None:
-                break
-            try:
-                await ws.send_json(msg)
-            except Exception:
-                break
+    # Queue for outbound messages — drained in the main loop
+    outbound: asyncio.Queue[str] = asyncio.Queue()
 
     async def on_realtime_audio(audio_b64: str):
-        """Forward OpenAI Realtime audio to Twilio."""
+        """Queue audio for Twilio (will be sent from main loop)."""
         if stream_sid:
-            await outbound_queue.put({
+            await outbound.put(json.dumps({
                 "event": "media",
                 "streamSid": stream_sid,
                 "media": {"payload": audio_b64},
-            })
+            }))
 
     async def on_transcript(role: str, text: str):
-        """Track conversation transcripts for post-call processing."""
         logger.info("Transcript [%s]: %s", role, text[:80])
         conversation_history.append({"role": role, "content": text})
 
     async def on_tool_call(call_id: str, name: str, args: dict) -> str:
-        """Handle function calls from the Realtime model."""
         factory = get_session_factory()
         async with factory() as db:
             tid = tenant_id or ""
-
             if name == "end_call":
-                logger.info("Tool: end_call")
                 return "Call ending. Say goodbye."
-
             elif name == "transfer_to_human":
-                logger.info("Tool: transfer_to_human")
-                await queries.log_analytics_event(
-                    db, tid, "transfer_requested", "voice",
-                    phone=caller_phone, session_id=call_sid,
-                )
+                await queries.log_analytics_event(db, tid, "transfer_requested", "voice", phone=caller_phone, session_id=call_sid)
                 return "Transferring the caller now."
-
             elif name == "book_appointment":
-                logger.info("Tool: book_appointment %s", args)
-                await queries.update_voice_session(
-                    db, call_sid,
-                    booking_context={"requested": True, "details": args},
-                )
-                return f"Appointment noted for {args.get('preferred_date', '')} at {args.get('preferred_time', '')}. Confirm with the caller."
-
+                await queries.update_voice_session(db, call_sid, booking_context={"requested": True, "details": args})
+                return f"Appointment noted for {args.get('preferred_date', '')} at {args.get('preferred_time', '')}."
             elif name == "save_caller_memory":
-                key = args.get("key", "")
-                value = args.get("value", "")
+                key, value = args.get("key", ""), args.get("value", "")
                 if key and value:
-                    await queries.save_caller_memory(
-                        db, tid, caller_phone, key, value,
-                        channel="voice", session_id=call_sid,
-                    )
+                    await queries.save_caller_memory(db, tid, caller_phone, key, value, channel="voice", session_id=call_sid)
                 return f"Saved: {key}={value}"
-
             elif name == "set_memory_consent":
-                consent = args.get("consent", False)
-                await queries.save_caller_consent(db, tid, caller_phone, consent, "voice")
-                return f"Consent {'granted' if consent else 'declined'}."
-
+                await queries.save_caller_consent(db, tid, caller_phone, args.get("consent", False), "voice")
+                return "Consent recorded."
             elif name == "forget_caller":
                 await queries.forget_caller(db, tid, caller_phone)
-                return "All caller data has been deleted."
+                return "All caller data deleted."
+            return "Done."
 
-            return "Unknown tool."
-
-    # ── Main loop ──────────────────────────────────────────────────
-
-    sender_task = asyncio.create_task(outbound_sender())
+    # ── Main loop: handles BOTH inbound (Twilio) and outbound (to Twilio) ──
 
     try:
         async for raw in ws.iter_text():
@@ -130,7 +90,7 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 is_returning = custom.get("is_returning", "false") == "true"
                 logger.info("Started: sid=%s tenant=%s", stream_sid, tenant_id)
 
-                # Load tenant config + build system prompt
+                # Load tenant config
                 greeting = ""
                 system_prompt = ""
                 try:
@@ -140,8 +100,6 @@ async def media_stream(ws: WebSocket, call_sid: str):
                         if tenant:
                             memories = await queries.lookup_caller_memory(db, tenant.tenant_id, caller_phone)
                             system_prompt = build_system_prompt(tenant, memories, is_returning)
-
-                            # Build greeting
                             if is_returning:
                                 name_mem = next((m for m in memories if m.memory_key == "name"), None)
                                 name = name_mem.memory_value if name_mem else None
@@ -152,31 +110,24 @@ async def media_stream(ws: WebSocket, call_sid: str):
                                 else:
                                     greeting = tenant.greeting_returning or "Welcome back!"
                             else:
-                                greeting = tenant.greeting_new or (
-                                    f"Thank you for calling {tenant.company_name or 'us'}. "
-                                    "How can I help you today?"
-                                )
+                                greeting = tenant.greeting_new or f"Thank you for calling {tenant.company_name or 'us'}. How can I help you today?"
                 except Exception:
                     logger.exception("Failed to load tenant config")
-                    system_prompt = "You are a helpful AI receptionist. Answer calls warmly."
-                    greeting = "Hello! How can I help you today?"
+                    system_prompt = "You are a helpful AI receptionist."
+                    greeting = "Hello! How can I help you?"
 
-                # Start OpenAI Realtime session
+                # Start Realtime
                 realtime = RealtimeSession(
                     system_prompt=system_prompt,
                     on_audio=on_realtime_audio,
                     on_transcript=on_transcript,
                     on_tool_call=on_tool_call,
-                    voice="alloy",
                 )
                 await realtime.connect()
                 logger.info("Realtime connected, sending greeting")
-
-                # Send greeting
                 await realtime.send_greeting(greeting)
 
             elif event == "media":
-                # Forward Twilio audio directly to OpenAI Realtime
                 if realtime:
                     audio_b64 = msg.get("media", {}).get("payload", "")
                     if audio_b64:
@@ -186,25 +137,24 @@ async def media_stream(ws: WebSocket, call_sid: str):
                 logger.info("Stopped: %s", call_sid)
                 break
 
+            # Drain outbound queue after each inbound message
+            while not outbound.empty():
+                try:
+                    out_msg = outbound.get_nowait()
+                    await ws.send_text(out_msg)
+                except Exception:
+                    break
+
     except WebSocketDisconnect:
         logger.info("Disconnected: %s", call_sid)
     except Exception:
         logger.exception("WebSocket error: %s", call_sid)
     finally:
-        await outbound_queue.put(None)
-        sender_task.cancel()
-
         if realtime:
             await realtime.close()
-
-        # Save conversation
         try:
             factory = get_session_factory()
             async with factory() as db:
-                await queries.update_voice_session(
-                    db, call_sid,
-                    conversation_history=conversation_history,
-                    status="closed",
-                )
+                await queries.update_voice_session(db, call_sid, conversation_history=conversation_history, status="closed")
         except Exception:
             pass
