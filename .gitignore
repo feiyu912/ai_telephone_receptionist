@@ -50,3 +50,5 @@ htmlcov/
 # Distribution
 *.tar.gz
 *.whl
+dashboard/node_modules/
+dashboard/.next/
