@@ -140,7 +140,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
             try:
                 async for message in websocket.iter_text():
                     data = json.loads(message)
-                    if data["event"] == "media" and openai_ws.open:
+                    if data["event"] == "media" and openai_ws.state.name == "OPEN":
                         latest_media_timestamp = int(data["media"]["timestamp"])
                         await openai_ws.send(json.dumps({
                             "type": "input_audio_buffer.append",
@@ -151,7 +151,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             mark_queue.pop(0)
             except WebSocketDisconnect:
                 logger.info("Twilio disconnected: %s", call_sid)
-                if openai_ws.open:
+                if openai_ws.state.name == "OPEN":
                     await openai_ws.close()
 
         async def send_to_twilio():
