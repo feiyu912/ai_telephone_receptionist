@@ -43,7 +43,6 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini",
         additional_headers={
             "Authorization": f"Bearer {settings.openai_api_key}",
-            "OpenAI-Beta": "realtime=v1",
         },
     ) as openai_ws:
 
@@ -56,20 +55,27 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         conversation_history: list[dict] = []
 
         async def initialize_session():
-            """Configure the OpenAI Realtime session."""
+            """Configure the OpenAI Realtime session (GA API format)."""
             session_update = {
                 "type": "session.update",
                 "session": {
-                    "turn_detection": {"type": "server_vad"},
-                    "input_audio_format": "g711_ulaw",
-                    "output_audio_format": "g711_ulaw",
-                    "voice": "alloy",
+                    "type": "realtime",
+                    "model": "gpt-realtime-mini",
                     "instructions": system_prompt,
-                    "modalities": ["text", "audio"],
-                    "tools": [{"type": "function", **t["function"]} for t in VOICE_TOOLS],
-                    "input_audio_transcription": {
-                        "model": "gpt-4o-mini-transcribe",
+                    "audio": {
+                        "input": {
+                            "format": {"type": "audio/pcmu"},
+                            "turn_detection": {"type": "server_vad"},
+                            "transcription": {
+                                "model": "gpt-4o-mini-transcribe",
+                            },
+                        },
+                        "output": {
+                            "format": {"type": "audio/pcmu"},
+                            "voice": "alloy",
+                        },
                     },
+                    "tools": [{"type": "function", **t["function"]} for t in VOICE_TOOLS],
                 },
             }
             await openai_ws.send(json.dumps(session_update))
@@ -173,12 +179,12 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     event_type = response.get("type", "")
 
                     # Log all event types for debugging
-                    if "audio" in event_type or event_type not in ("response.audio.delta",):
-                        if event_type != "response.audio.delta":
+                    if "audio" in event_type or event_type not in ("response.output_audio.delta",):
+                        if event_type != "response.output_audio.delta":
                             logger.info("OpenAI event: %s", event_type)
 
                     # Forward audio to Twilio
-                    if event_type == "response.audio.delta" and "delta" in response:
+                    if event_type == "response.output_audio.delta" and "delta" in response:
                         audio_chunks += 1
                         if audio_chunks == 1:
                             logger.info("First audio delta received, forwarding to Twilio")
@@ -206,7 +212,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             mark_queue.append("responsePart")
 
                     # Transcript of what AI said
-                    elif event_type == "response.audio_transcript.done":
+                    elif event_type == "response.output_audio_transcript.done":
                         transcript = response.get("transcript", "")
                         if transcript:
                             logger.info("AI said: %s", transcript[:80])
