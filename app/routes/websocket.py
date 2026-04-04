@@ -10,7 +10,6 @@ Two concurrent tasks via asyncio.gather():
 
 from __future__ import annotations
 import asyncio
-import base64
 import json
 import logging
 import websockets
@@ -186,16 +185,18 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     # Forward audio to Twilio
                     if event_type == "response.output_audio.delta" and "delta" in response:
                         audio_chunks += 1
-                        if audio_chunks == 1:
-                            logger.info("First audio delta received, forwarding to Twilio")
-                        audio_payload = base64.b64encode(
-                            base64.b64decode(response["delta"])
-                        ).decode("utf-8")
-                        await websocket.send_text(json.dumps({
-                            "event": "media",
-                            "streamSid": stream_sid,
-                            "media": {"payload": audio_payload},
-                        }))
+                        audio_payload = response["delta"]
+                        try:
+                            await websocket.send_text(json.dumps({
+                                "event": "media",
+                                "streamSid": stream_sid,
+                                "media": {"payload": audio_payload},
+                            }))
+                            if audio_chunks == 1:
+                                logger.info("First audio sent to Twilio: %d chars payload, streamSid=%s", len(audio_payload), stream_sid)
+                        except Exception as e:
+                            logger.error("SEND FAILED on chunk %d: %s", audio_chunks, e)
+                            break
 
                         # Track response timing for interruption
                         if response.get("item_id") and response["item_id"] != last_assistant_item:
