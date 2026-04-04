@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db.client import shutdown_db
-from app.routes import voice, websocket, token, sms, whatsapp, admin, preview
+from app.routes import voice, websocket, token, sms, whatsapp, admin, preview, oauth
 from app.services.cleanup import cleanup_loop
 
 settings = get_settings()
@@ -58,6 +58,7 @@ app.include_router(sms.router)
 app.include_router(whatsapp.router)
 app.include_router(admin.router)
 app.include_router(preview.router)
+app.include_router(oauth.router)
 
 
 @app.get("/")

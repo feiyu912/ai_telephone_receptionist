@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     # --- HubSpot ---
     hubspot_access_token: str = ""
+    hubspot_client_id: str = ""
+    hubspot_client_secret: str = ""
 
     # --- Microsoft Graph (Outlook Calendar) ---
     ms_tenant_id: str = ""
