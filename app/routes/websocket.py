@@ -167,12 +167,21 @@ async def media_stream(websocket: WebSocket, call_sid: str):
             """Receive events from OpenAI, forward audio to Twilio."""
             nonlocal last_assistant_item, response_start_timestamp_twilio
             try:
+                audio_chunks = 0
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
                     event_type = response.get("type", "")
 
+                    # Log all event types for debugging
+                    if "audio" in event_type or event_type not in ("response.audio.delta",):
+                        if event_type != "response.audio.delta":
+                            logger.info("OpenAI event: %s", event_type)
+
                     # Forward audio to Twilio
                     if event_type == "response.audio.delta" and "delta" in response:
+                        audio_chunks += 1
+                        if audio_chunks == 1:
+                            logger.info("First audio delta received, forwarding to Twilio")
                         audio_payload = base64.b64encode(
                             base64.b64decode(response["delta"])
                         ).decode("utf-8")
