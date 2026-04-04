@@ -191,11 +191,11 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                         audio_payload = base64.b64encode(
                             base64.b64decode(response["delta"])
                         ).decode("utf-8")
-                        await websocket.send_json({
+                        await websocket.send_text(json.dumps({
                             "event": "media",
                             "streamSid": stream_sid,
                             "media": {"payload": audio_payload},
-                        })
+                        }))
 
                         # Track response timing for interruption
                         if response.get("item_id") and response["item_id"] != last_assistant_item:
@@ -204,11 +204,11 @@ async def media_stream(websocket: WebSocket, call_sid: str):
 
                         # Send mark after each audio chunk
                         if stream_sid:
-                            await websocket.send_json({
+                            await websocket.send_text(json.dumps({
                                 "event": "mark",
                                 "streamSid": stream_sid,
                                 "mark": {"name": "responsePart"},
-                            })
+                            }))
                             mark_queue.append("responsePart")
 
                     # Transcript of what AI said
@@ -241,10 +241,10 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                                     "content_index": 0,
                                     "audio_end_ms": elapsed,
                                 }))
-                            await websocket.send_json({
+                            await websocket.send_text(json.dumps({
                                 "event": "clear",
                                 "streamSid": stream_sid,
-                            })
+                            }))
                             mark_queue.clear()
                             last_assistant_item = None
                             response_start_timestamp_twilio = None
