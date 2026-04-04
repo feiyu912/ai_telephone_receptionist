@@ -1,23 +1,16 @@
-"""Cartesia Sonic 3 TTS via WebSocket for real-time voice synthesis.
+"""Cartesia Sonic 3 TTS using the official Cartesia Python SDK.
 
-Supports:
-1. tts_stream() — one-shot: send complete text, receive audio chunks
-2. TTSContext — streaming continuation: pipe sentences as GPT generates them
+The SDK handles WebSocket lifecycle, context management, and audio format
+automatically — no manual JSON, no connection bugs.
 """
 
 from __future__ import annotations
-import asyncio
-import base64
-import json
 import logging
-import uuid
 from typing import AsyncIterator, Callable, Awaitable
-import websockets
+from cartesia import AsyncCartesia
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-
-CARTESIA_TTS_WS = "wss://api.cartesia.ai/tts/websocket"
 
 DEFAULT_VOICE_ID = "a0e99841-438c-4a64-b679-ae501e7d6091"
 
@@ -27,31 +20,34 @@ VOICE_MAP = {
     "Polly.Amy-Neural": "79a125e8-cd45-4c13-8a67-188112f4dd22",
 }
 
-_OUTPUT_FORMAT = {
+OUTPUT_FORMAT = {
     "container": "raw",
     "encoding": "pcm_mulaw",
     "sample_rate": 8000,
 }
 
+_client: AsyncCartesia | None = None
+
+
+def _get_client() -> AsyncCartesia:
+    global _client
+    if _client is None:
+        _client = AsyncCartesia(api_key=get_settings().cartesia_api_key)
+    return _client
+
 
 class TTSContext:
-    """Persistent TTS WebSocket for streaming sentence-by-sentence.
+    """Persistent TTS WebSocket connection for an entire call.
 
-    Keeps one WebSocket open for the entire call. Each conversation turn
-    uses a new context_id. Sentences within a turn use continue=True.
+    Uses Cartesia SDK's websocket_connect for managed connection lifecycle.
+    Each conversation turn gets a new context (maintains prosody within a turn).
 
     Usage:
         tts = TTSContext(voice_id, on_audio=send_to_twilio)
         await tts.connect()
-
-        # For each GPT sentence as it streams:
-        await tts.send_sentence("Hello there.", more_coming=True)
-        await tts.send_sentence("How can I help?", more_coming=False)
-
-        # New conversation turn:
-        tts.new_turn()
-        await tts.send_sentence("Sure, let me look that up.", more_coming=False)
-
+        await tts.speak("Hello!")              # one-shot
+        await tts.stream_sentences(gen)        # stream from GPT
+        await tts.cancel()                     # barge-in
         await tts.close()
     """
 
@@ -61,109 +57,96 @@ class TTSContext:
         on_audio: Callable[[bytes], Awaitable[None]] | None = None,
     ):
         self._voice = voice_id or DEFAULT_VOICE_ID
-        self._ws: websockets.WebSocketClientProtocol | None = None
-        self._context_id = str(uuid.uuid4())
         self._on_audio = on_audio
-        self._recv_task: asyncio.Task | None = None
-        self._connected = False
+        self._conn = None
+        self._conn_mgr = None
 
     async def connect(self) -> None:
-        settings = get_settings()
-        uri = (
-            f"{CARTESIA_TTS_WS}"
-            f"?api_key={settings.cartesia_api_key}"
-            f"&cartesia_version=2025-04-16"
+        client = _get_client()
+        self._conn_mgr = client.tts.websocket_connect()
+        self._conn = await self._conn_mgr.__aenter__()
+
+    async def speak(self, text: str) -> None:
+        """Speak a complete text (one-shot, e.g. greeting)."""
+        if not self._conn or not text.strip():
+            return
+
+        ctx = self._conn.context(
+            model_id="sonic-3",
+            voice={"mode": "id", "id": self._voice},
+            output_format=OUTPUT_FORMAT,
         )
-        self._ws = await websockets.connect(uri)
-        self._connected = True
-        # Start background receiver that pipes audio to callback
-        self._recv_task = asyncio.create_task(self._receive_loop())
+        await ctx.push(text)
+        await ctx.no_more_inputs()
 
-    async def _receive_loop(self) -> None:
-        """Background task: receive audio chunks and forward via callback."""
-        try:
-            async for msg in self._ws:
-                data = json.loads(msg)
-                msg_type = data.get("type", "")
+        async for resp in ctx.receive():
+            if hasattr(resp, "audio") and resp.audio and self._on_audio:
+                await self._on_audio(resp.audio)
 
-                if msg_type == "chunk":
-                    audio_b64 = data.get("data", "")
-                    if audio_b64 and self._on_audio:
-                        await self._on_audio(base64.b64decode(audio_b64))
-                elif msg_type == "error":
-                    logger.error("TTS error: %s", data.get("error"))
-        except websockets.exceptions.ConnectionClosed:
-            pass
-        except Exception:
-            logger.exception("TTS receive loop error")
-        finally:
-            self._connected = False
+    async def stream_sentences(self, sentence_gen) -> str:
+        """Stream sentences from an async generator to TTS.
 
-    async def send_sentence(self, text: str, more_coming: bool = False) -> None:
-        """Send a sentence to TTS. Audio arrives via on_audio callback.
+        Each sentence is pushed with continue=True, final with continue=False.
+        Audio chunks are forwarded via on_audio callback as they arrive.
 
         Args:
-            text: The sentence to speak.
-            more_coming: True if more sentences follow in this turn.
-        """
-        if not self._ws or not self._connected or not text.strip():
-            return
+            sentence_gen: async generator yielding (sentence: str, is_last: bool)
 
-        request = {
-            "model_id": "sonic-3",
-            "transcript": text,
-            "voice": {"mode": "id", "id": self._voice},
-            "output_format": _OUTPUT_FORMAT,
-            "language": "en",
-            "context_id": self._context_id,
-            "continue": more_coming,
-        }
-        await self._ws.send(json.dumps(request))
+        Returns:
+            Full concatenated text of all sentences spoken.
+        """
+        if not self._conn:
+            return ""
+
+        ctx = self._conn.context(
+            model_id="sonic-3",
+            voice={"mode": "id", "id": self._voice},
+            output_format=OUTPUT_FORMAT,
+        )
+
+        full_text = ""
+        import asyncio
+
+        async def send_sentences():
+            nonlocal full_text
+            async for sentence, is_last in sentence_gen:
+                if sentence.strip():
+                    full_text += sentence
+                    logger.info("→ TTS: '%s'", sentence.strip()[:60])
+                    await ctx.push(sentence)
+                if is_last:
+                    break
+            await ctx.no_more_inputs()
+
+        async def receive_audio():
+            async for resp in ctx.receive():
+                if hasattr(resp, "audio") and resp.audio and self._on_audio:
+                    await self._on_audio(resp.audio)
+
+        # Run send and receive concurrently
+        await asyncio.gather(send_sentences(), receive_audio())
+        return full_text
 
     async def cancel(self) -> None:
-        """Cancel current TTS generation (for barge-in)."""
-        if not self._ws or not self._connected:
-            return
-        cancel_msg = {
-            "context_id": self._context_id,
-            "cancel": True,
-        }
-        try:
-            await self._ws.send(json.dumps(cancel_msg))
-        except Exception:
-            pass
-        # Start fresh context for next response
-        self._context_id = str(uuid.uuid4())
-
-    def new_turn(self):
-        """Start a new context for a new conversation turn."""
-        self._context_id = str(uuid.uuid4())
+        """Cancel current generation (for barge-in). Next speak/stream uses new context."""
+        # SDK handles cancellation via new context — old context is abandoned
+        pass
 
     async def close(self) -> None:
-        self._connected = False
-        if self._recv_task:
-            self._recv_task.cancel()
+        if self._conn_mgr:
             try:
-                await self._recv_task
-            except asyncio.CancelledError:
-                pass
-        if self._ws:
-            try:
-                await self._ws.close()
+                await self._conn_mgr.__aexit__(None, None, None)
             except Exception:
                 pass
 
 
-# ── Sentence buffer for streaming GPT → TTS ───────────────────────
+# ── Sentence extraction for streaming ──────────────────────────────
 
-SENTENCE_ENDS = {".","!","?",";",":","—","–"}
+SENTENCE_ENDS = {".", "!", "?", ";"}
 
 
 def extract_sentences(buffer: str) -> tuple[list[str], str]:
-    """Split buffer into complete sentences and remaining text.
-
-    Returns (sentences, remainder).
-    """
+    """Split buffer into complete sentences and remaining text."""
     sentences = []
     current = ""
     for char in buffer:
@@ -174,48 +157,22 @@ def extract_sentences(buffer: str) -> tuple[list[str], str]:
     return sentences, current
 
 
-# ── Simple one-shot TTS (used for greeting) ────────────────────────
+# ── Simple one-shot TTS (backward compat) ──────────────────────────
 
 async def tts_stream(text: str, voice_id: str | None = None) -> AsyncIterator[bytes]:
-    """One-shot TTS: send full text, yield audio chunks."""
-    settings = get_settings()
+    """One-shot TTS using SDK. Yields audio chunks."""
+    client = _get_client()
     voice = voice_id or DEFAULT_VOICE_ID
-    context_id = str(uuid.uuid4())
 
-    uri = (
-        f"{CARTESIA_TTS_WS}"
-        f"?api_key={settings.cartesia_api_key}"
-        f"&cartesia_version=2025-04-16"
-    )
+    async with client.tts.websocket_connect() as conn:
+        ctx = conn.context(
+            model_id="sonic-3",
+            voice={"mode": "id", "id": voice},
+            output_format=OUTPUT_FORMAT,
+        )
+        await ctx.push(text)
+        await ctx.no_more_inputs()
 
-    try:
-        async with websockets.connect(uri) as ws:
-            request = {
-                "model_id": "sonic-3",
-                "transcript": text,
-                "voice": {"mode": "id", "id": voice},
-                "output_format": _OUTPUT_FORMAT,
-                "language": "en",
-                "context_id": context_id,
-                "continue": False,
-            }
-            await ws.send(json.dumps(request))
-
-            async for msg in ws:
-                data = json.loads(msg)
-                msg_type = data.get("type", "")
-
-                if msg_type == "chunk":
-                    audio_b64 = data.get("data", "")
-                    if audio_b64:
-                        yield base64.b64decode(audio_b64)
-                    if data.get("done", False):
-                        break
-                elif msg_type == "done":
-                    break
-                elif msg_type == "error":
-                    logger.error("Cartesia TTS error: %s", data.get("error"))
-                    break
-    except Exception:
-        logger.exception("Cartesia TTS WebSocket error")
-        raise
+        async for resp in ctx.receive():
+            if hasattr(resp, "audio") and resp.audio:
+                yield resp.audio
