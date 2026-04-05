@@ -9,36 +9,39 @@ import {
   HelpCircle,
   Settings,
   Link2,
-  ChevronDown,
+  LogOut,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  {
-    label: "Dashboards",
-    items: [
-      { name: "Overview", href: "/overview", icon: LayoutDashboard },
-      { name: "Call History", href: "/calls", icon: Phone },
-    ],
-  },
-  {
-    label: "Management",
-    items: [
-      { name: "Customers", href: "/customers", icon: Users },
-      { name: "FAQ", href: "/faq", icon: HelpCircle },
-    ],
-  },
-  {
-    label: "Configuration",
-    items: [
-      { name: "Settings", href: "/settings", icon: Settings },
-      { name: "Integrations", href: "/integrations", icon: Link2 },
-    ],
-  },
-];
+import { useAuth } from "@/lib/auth";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+
+  const navItems = [
+    {
+      label: "Dashboards",
+      items: [
+        { name: "Overview", href: "/overview", icon: LayoutDashboard },
+        { name: "Call History", href: "/calls", icon: Phone },
+      ],
+    },
+    {
+      label: "Management",
+      items: [
+        { name: "Customers", href: "/customers", icon: Users },
+        { name: "FAQ", href: "/faq", icon: HelpCircle },
+      ],
+    },
+    {
+      label: "Configuration",
+      items: [
+        { name: "Settings", href: "/settings", icon: Settings },
+        { name: "Integrations", href: "/integrations", icon: Link2 },
+      ],
+    },
+  ];
 
   return (
     <aside className="w-60 border-r border-border bg-card h-screen sticky top-0 flex flex-col">
@@ -81,14 +84,26 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Tenant Selector */}
-      <div className="p-3 border-t border-border">
-        <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors">
-          <div className="w-6 h-6 rounded bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-            3
+      {/* User Info */}
+      <div className="p-3 border-t border-border space-y-2">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
+            {user?.tenantName?.charAt(0) || "?"}
           </div>
-          <span className="flex-1 text-left">360 Group</span>
-          <ChevronDown className="w-4 h-4" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{user?.tenantName}</p>
+            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+              {user?.role === "admin" && <Shield className="w-3 h-3" />}
+              {user?.email}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={logout}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-red-500 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
         </button>
       </div>
     </aside>
