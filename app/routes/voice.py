@@ -303,29 +303,45 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 sentiment=facts.sentiment,
             )
 
-            # HubSpot sync
+            # Analyze follow-up actions (SMS + calendar)
+            tenant = await queries.get_tenant_by_id(db, str(tenant_id))
+            sms_action = await llm.analyze_sms_action(masked_transcript)
+
+            # HubSpot sync (with meeting data if calendar needed)
+            meeting_data = None
+            if sms_action.get("needs_calendar") and sms_action.get("has_specific_time"):
+                meeting_data = sms_action
+
             await hubspot_sync(
                 phone=phone, name=facts.name, email=facts.email,
                 summary=masked_transcript[:500], session_id=call_sid,
+                meeting_data=meeting_data,
             )
 
-            # Check if SMS follow-up needed
-            tenant = await queries.get_tenant_by_id(db, str(tenant_id))
-            sms_action = await llm.analyze_sms_action(masked_transcript)
-            if sms_action.get("needs_sms") and tenant:
-                # Check opt-out before sending
+            # SMS follow-up (skip browser callers, check opt-out)
+            if sms_action.get("needs_sms") and tenant and not phone.startswith("client:"):
                 opt_out = await db.execute(
                     text("SELECT 1 FROM opt_outs WHERE phone = :phone AND tenant_id = :tid"),
                     {"phone": phone, "tid": tenant_id},
                 )
                 if not opt_out.first():
-                    sms_body = sms_action.get("sms_body") or ""
+                    sms_body = sms_action.get("sms_body", "")
+
+                    # If booking but no specific time, insert booking link
+                    if sms_action.get("needs_calendar") and not sms_action.get("has_specific_time"):
+                        booking_link = tenant.hubspot_booking_link or ""
+                        if booking_link and sms_body:
+                            sms_body = sms_body.replace("[booking_link]", booking_link)
+
                     if sms_action.get("sms_type") == "summary":
                         await send_call_summary(
                             phone, tenant.phone_number,
                             masked_transcript[:300], tenant.company_name or "",
                         )
                     elif sms_body:
+                        # Cap at 320 chars
+                        if len(sms_body) > 320:
+                            sms_body = sms_body[:317] + "..."
                         await send_sms(phone, tenant.phone_number, sms_body)
 
                     await queries.log_analytics_event(
@@ -333,6 +349,19 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         phone=phone, session_id=call_sid,
                         event_data=sms_action,
                     )
+
+            # Email follow-up if caller provided email
+            if facts.email and tenant:
+                try:
+                    from app.services.email import send_followup_email
+                    await send_followup_email(
+                        to_email=facts.email,
+                        caller_name=facts.name or "there",
+                        summary=masked_transcript[:300],
+                        company_name=tenant.company_name or "",
+                    )
+                except Exception:
+                    logger.debug("Email follow-up skipped (SMTP not configured)")
 
         except Exception:
             logger.exception("Post-call processing failed for %s", call_sid)
