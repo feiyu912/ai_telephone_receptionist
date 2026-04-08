@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,8 +9,51 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
+import { getTenantSettings, updateTenantSettings } from "@/lib/api";
+
+const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
 
 export default function SettingsPage() {
+  const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getTenantSettings(TENANT_ID)
+      .then(setSettings)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const update = (key: string, value: unknown) => {
+    setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setSaved(false);
+  };
+
+  const handleSave = async () => {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      await updateTenantSettings(TENANT_ID, settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error("Failed to save:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || !settings) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -28,26 +72,38 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Company Name</Label>
-                <Input defaultValue="360 Group" />
+                <Input
+                  value={String(settings.company_name || "")}
+                  onChange={(e) => update("company_name", e.target.value)}
+                />
               </div>
               <div>
                 <Label>Phone Number</Label>
-                <Input defaultValue="+1-555-0100" disabled />
+                <Input value={String(settings.phone_number || "")} disabled />
               </div>
               <div>
                 <Label>Slug</Label>
-                <Input defaultValue="360-group" />
+                <Input
+                  value={String(settings.slug || "")}
+                  onChange={(e) => update("slug", e.target.value)}
+                />
               </div>
               <div>
                 <Label>Voicemail Email</Label>
-                <Input defaultValue="emilio@360dmmc.com" />
+                <Input
+                  value={String(settings.voicemail_email || "")}
+                  onChange={(e) => update("voicemail_email", e.target.value)}
+                />
               </div>
             </div>
           </Card>
 
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">Tier</h3>
-            <Select defaultValue="growth">
+            <Select
+              value={String(settings.tier || "starter")}
+              onValueChange={(v) => update("tier", v)}
+            >
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
@@ -58,29 +114,36 @@ export default function SettingsPage() {
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">
-              Growth tier uses OpenAI Realtime for sub-second voice latency.
+              Growth/Pro tiers use OpenAI Realtime for sub-second voice latency.
             </p>
           </Card>
 
-          <div className="flex justify-end">
-            <Button>Save Changes</Button>
+          <div className="flex justify-end gap-2">
+            {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
           </div>
         </TabsContent>
 
         <TabsContent value="voice" className="space-y-4 mt-4">
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">AI Voice</h3>
-            <Select defaultValue="alloy">
+            <Select
+              value={String(settings.selected_voice || "Polly.Joanna-Neural")}
+              onValueChange={(v) => update("selected_voice", v)}
+            >
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="alloy">Alloy</SelectItem>
-                <SelectItem value="echo">Echo</SelectItem>
-                <SelectItem value="fable">Fable</SelectItem>
-                <SelectItem value="onyx">Onyx</SelectItem>
-                <SelectItem value="nova">Nova</SelectItem>
-                <SelectItem value="shimmer">Shimmer</SelectItem>
+                <SelectItem value="alloy">Alloy (Realtime)</SelectItem>
+                <SelectItem value="echo">Echo (Realtime)</SelectItem>
+                <SelectItem value="nova">Nova (Realtime)</SelectItem>
+                <SelectItem value="shimmer">Shimmer (Realtime)</SelectItem>
+                <SelectItem value="Polly.Joanna-Neural">Polly Joanna (Starter)</SelectItem>
+                <SelectItem value="Polly.Matthew-Neural">Polly Matthew (Starter)</SelectItem>
               </SelectContent>
             </Select>
           </Card>
@@ -90,15 +153,18 @@ export default function SettingsPage() {
             <div>
               <Label>New Caller Greeting</Label>
               <Textarea
-                defaultValue="Thank you for calling 360 Group. How can I help you today?"
+                value={String(settings.greeting_new || "")}
+                onChange={(e) => update("greeting_new", e.target.value)}
                 rows={2}
               />
             </div>
             <div>
               <Label>Returning Caller Greeting</Label>
               <Textarea
-                defaultValue="Welcome back, {name}! How can I help you today?"
+                value={String(settings.greeting_returning || "")}
+                onChange={(e) => update("greeting_returning", e.target.value)}
                 rows={2}
+                placeholder="Welcome back, {name}! How can I help you today?"
               />
             </div>
           </Card>
@@ -106,17 +172,23 @@ export default function SettingsPage() {
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">System Prompt</h3>
             <Textarea
-              placeholder="Enter the AI system prompt..."
+              value={String(settings.system_prompt || "")}
+              onChange={(e) => update("system_prompt", e.target.value)}
               rows={8}
               className="font-mono text-sm"
+              placeholder="Enter the AI system prompt..."
             />
             <p className="text-sm text-muted-foreground">
               This prompt controls the AI&apos;s personality and behavior during calls.
             </p>
           </Card>
 
-          <div className="flex justify-end">
-            <Button>Save Changes</Button>
+          <div className="flex justify-end gap-2">
+            {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
           </div>
         </TabsContent>
 
@@ -127,7 +199,7 @@ export default function SettingsPage() {
               <Switch defaultChecked />
             </div>
             <p className="text-sm text-muted-foreground">
-              AI answers all calls 24/7. Disable to route after-hours calls to voicemail.
+              AI answers all calls 24/7. Business hours are informational only.
             </p>
           </Card>
 
@@ -136,21 +208,38 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Start Hour</Label>
-                <Input type="number" defaultValue={9} min={0} max={23} />
+                <Input
+                  type="number"
+                  value={Number(settings.business_hours_start || 9)}
+                  onChange={(e) => update("business_hours_start", parseInt(e.target.value))}
+                  min={0} max={23}
+                />
               </div>
               <div>
                 <Label>End Hour</Label>
-                <Input type="number" defaultValue={17} min={0} max={23} />
+                <Input
+                  type="number"
+                  value={Number(settings.business_hours_end || 17)}
+                  onChange={(e) => update("business_hours_end", parseInt(e.target.value))}
+                  min={0} max={23}
+                />
               </div>
               <div>
                 <Label>Timezone</Label>
-                <Input defaultValue="America/Chicago" />
+                <Input
+                  value={String(settings.business_hours_timezone || "America/Chicago")}
+                  onChange={(e) => update("business_hours_timezone", e.target.value)}
+                />
               </div>
             </div>
           </Card>
 
-          <div className="flex justify-end">
-            <Button>Save Changes</Button>
+          <div className="flex justify-end gap-2">
+            {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
           </div>
         </TabsContent>
 
@@ -159,11 +248,18 @@ export default function SettingsPage() {
             <h3 className="font-medium">Transfer Settings</h3>
             <div>
               <Label>Hunt Group Numbers (comma-separated)</Label>
-              <Input defaultValue="+17732005177, +12162638731" />
+              <Input
+                value={Array.isArray(settings.hunt_group_numbers) ? (settings.hunt_group_numbers as string[]).join(", ") : ""}
+                onChange={(e) => update("hunt_group_numbers", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
+              />
             </div>
             <div>
               <Label>Transfer Timeout (seconds)</Label>
-              <Input type="number" defaultValue={20} />
+              <Input
+                type="number"
+                value={Number(settings.transfer_timeout || 20)}
+                onChange={(e) => update("transfer_timeout", parseInt(e.target.value))}
+              />
             </div>
           </Card>
 
@@ -174,11 +270,18 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium">Require Memory Consent</p>
                 <p className="text-xs text-muted-foreground">Ask callers before storing data</p>
               </div>
-              <Switch defaultChecked />
+              <Switch
+                checked={Boolean(settings.memory_consent_required)}
+                onCheckedChange={(v) => update("memory_consent_required", v)}
+              />
             </div>
             <div>
               <Label>Memory Expiry (days)</Label>
-              <Input type="number" defaultValue={90} />
+              <Input
+                type="number"
+                value={Number(settings.memory_expiry_days || 90)}
+                onChange={(e) => update("memory_expiry_days", parseInt(e.target.value))}
+              />
             </div>
           </Card>
 
@@ -189,26 +292,45 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium">Enable Booking</p>
                 <p className="text-xs text-muted-foreground">Allow AI to book appointments</p>
               </div>
-              <Switch />
+              <Switch
+                checked={Boolean(settings.booking_enabled)}
+                onCheckedChange={(v) => update("booking_enabled", v)}
+              />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Duration (min)</Label>
-                <Input type="number" defaultValue={60} />
+                <Input
+                  type="number"
+                  value={Number(settings.booking_duration_minutes || 60)}
+                  onChange={(e) => update("booking_duration_minutes", parseInt(e.target.value))}
+                />
               </div>
               <div>
                 <Label>Buffer (min)</Label>
-                <Input type="number" defaultValue={15} />
+                <Input
+                  type="number"
+                  value={Number(settings.booking_buffer_minutes || 15)}
+                  onChange={(e) => update("booking_buffer_minutes", parseInt(e.target.value))}
+                />
               </div>
               <div>
                 <Label>Advance (days)</Label>
-                <Input type="number" defaultValue={30} />
+                <Input
+                  type="number"
+                  value={Number(settings.booking_advance_days || 30)}
+                  onChange={(e) => update("booking_advance_days", parseInt(e.target.value))}
+                />
               </div>
             </div>
           </Card>
 
-          <div className="flex justify-end">
-            <Button>Save Changes</Button>
+          <div className="flex justify-end gap-2">
+            {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
           </div>
         </TabsContent>
       </Tabs>

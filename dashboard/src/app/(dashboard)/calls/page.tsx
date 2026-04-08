@@ -1,28 +1,26 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Phone, Filter, SlidersHorizontal, Plus } from "lucide-react";
+import { Phone, Filter, Loader2 } from "lucide-react";
+import { getCalls } from "@/lib/api";
 
-const calls = [
-  { sid: "CA4064d0", phone: "+1 (312) 555-0142", tier: "Growth", date: "Just now", status: "active", duration: "2:34" },
-  { sid: "CA8e6cac", phone: "+1 (773) 555-0198", tier: "Starter", date: "5 min ago", status: "closed", duration: "4:12" },
-  { sid: "CA29df17", phone: "+1 (847) 555-0163", tier: "Growth", date: "1 hour ago", status: "closed", duration: "1:45" },
-  { sid: "CAcf99c4", phone: "+1 (630) 555-0177", tier: "Pro", date: "2 hours ago", status: "closed", duration: "6:21" },
-  { sid: "CA5a396d", phone: "+1 (312) 555-0155", tier: "Growth", date: "Yesterday", status: "closed", duration: "3:08" },
-  { sid: "CA0dbc17", phone: "+1 (708) 555-0189", tier: "Starter", date: "Yesterday", status: "voicemail", duration: "0:45" },
-  { sid: "CA73fe75", phone: "+1 (312) 555-0142", tier: "Growth", date: "Feb 2, 2026", status: "closed", duration: "5:33" },
-  { sid: "CA180cb1", phone: "+1 (847) 555-0163", tier: "Pro", date: "Feb 2, 2026", status: "transferred", duration: "2:15" },
-];
+const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
+
+interface Call {
+  call_sid: string;
+  caller_phone: string;
+  called_number: string;
+  tier: string;
+  status: string;
+  started_at: string;
+  last_activity_at: string;
+}
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
@@ -31,73 +29,99 @@ const statusColors: Record<string, string> = {
   transferred: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? "s" : ""} ago`;
+}
+
 export default function CallHistoryPage() {
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    getCalls(TENANT_ID)
+      .then(setCalls)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = calls.filter(
+    (c) =>
+      !search ||
+      c.caller_phone.includes(search) ||
+      c.call_sid.includes(search)
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Call History</h1>
 
       <Card className="p-0">
-        {/* Toolbar */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded hover:bg-muted"><Plus className="w-4 h-4" /></button>
             <button className="p-1.5 rounded hover:bg-muted"><Filter className="w-4 h-4" /></button>
-            <button className="p-1.5 rounded hover:bg-muted"><SlidersHorizontal className="w-4 h-4" /></button>
           </div>
-          <Input placeholder="Search calls..." className="w-56 h-8" />
+          <Input
+            placeholder="Search calls..."
+            className="w-56 h-8"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
-        {/* Table */}
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10"><input type="checkbox" className="rounded" /></TableHead>
               <TableHead>Call SID</TableHead>
               <TableHead>Caller</TableHead>
               <TableHead>Tier</TableHead>
-              <TableHead>Duration</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {calls.map((call) => (
-              <TableRow key={call.sid} className="cursor-pointer hover:bg-muted/50">
-                <TableCell><input type="checkbox" className="rounded" /></TableCell>
-                <TableCell className="font-mono text-sm">#{call.sid}</TableCell>
+            {filtered.map((call) => (
+              <TableRow key={call.call_sid} className="cursor-pointer hover:bg-muted/50">
+                <TableCell className="font-mono text-sm">#{call.call_sid.slice(0, 10)}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                    {call.phone}
+                    {call.caller_phone}
                   </div>
                 </TableCell>
                 <TableCell>{call.tier}</TableCell>
-                <TableCell>{call.duration}</TableCell>
-                <TableCell className="text-muted-foreground">{call.date}</TableCell>
+                <TableCell className="text-muted-foreground">{timeAgo(call.started_at)}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary" className={statusColors[call.status]}>
+                  <Badge variant="secondary" className={statusColors[call.status] || ""}>
                     {call.status}
                   </Badge>
                 </TableCell>
               </TableRow>
             ))}
+            {filtered.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  No calls found
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
-
-        {/* Pagination */}
-        <div className="flex items-center justify-center gap-1 p-4 border-t border-border">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              className={`px-3 py-1 rounded text-sm ${
-                n === 1 ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted text-muted-foreground"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-          <button className="px-2 py-1 rounded hover:bg-muted text-muted-foreground">&gt;</button>
-        </div>
       </Card>
     </div>
   );
