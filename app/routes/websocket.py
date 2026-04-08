@@ -63,7 +63,9 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     tenant = await queries.get_tenant_by_id(db, tenant_id) if tenant_id else None
                     if tenant:
                         memories = await queries.lookup_caller_memory(db, tenant.tenant_id, caller_phone)
-                        system_prompt = build_system_prompt(tenant, memories, is_returning)
+                        faqs = await queries.get_faq_entries(db, tenant.tenant_id)
+                        faq_context = "\n".join(f"Q: {f['question']}\nA: {f['answer']}" for f in faqs[:30])
+                        system_prompt = build_system_prompt(tenant, memories, is_returning, faq_context=faq_context)
                         if is_returning:
                             name_mem = next((m for m in memories if m.memory_key == "name"), None)
                             name = name_mem.memory_value if name_mem else None
