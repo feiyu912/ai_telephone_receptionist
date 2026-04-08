@@ -10,6 +10,8 @@ Replicates the n8n SMS Channel workflow:
 
 from __future__ import annotations
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy import text
@@ -18,11 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.client import get_db
 from app.db import queries
 from app.services import llm
-from app.services.sms import send_sms
 from app.services.hubspot import sync_call as hubspot_sync
 from app.services.pii import mask_pii
 from app.prompts.system import build_system_prompt
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sms", tags=["sms"])
@@ -34,6 +34,17 @@ _processed_sids: set[str] = set()
 _STOP_WORDS = {"stop", "unsubscribe", "cancel", "end", "quit"}
 _HELP_WORDS = {"help", "info"}
 _START_WORDS = {"start", "unstop", "subscribe"}
+
+# SMS response max length (SMS segment = 160 chars, 2 segments = 320)
+SMS_MAX_LENGTH = 320
+
+
+def _is_quiet_hours(timezone: str = "America/Chicago") -> bool:
+    """Check if current time is in quiet hours (9pm-8am or weekends)."""
+    now = datetime.now(ZoneInfo(timezone))
+    if now.isoweekday() in (6, 7):  # Saturday, Sunday
+        return True
+    return now.hour >= 21 or now.hour < 8
 
 
 @router.post("/inbound")
@@ -59,10 +70,16 @@ async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
         logger.warning("SMS to unknown number: %s", to_number)
         return _twiml_empty()
 
-    # TCPA compliance check
+    # TCPA quiet hours check (9pm-8am, no weekends)
+    if _is_quiet_hours(tenant.business_hours_timezone):
+        logger.info("SMS blocked by quiet hours: %s", from_number)
+        return _twiml_empty()
+
+    # TCPA compliance check (keyword matching — also catches "stop please" etc.)
     body_lower = body.lower().strip()
-    if body_lower in _STOP_WORDS:
-        await _handle_opt_out(db, tenant.tenant_id, from_number, to_number)
+    body_first_word = body_lower.split()[0] if body_lower else ""
+    if body_first_word in _STOP_WORDS or body_lower in _STOP_WORDS:
+        await _handle_opt_out(db, tenant.tenant_id, from_number)
         return _twiml_reply("You've been unsubscribed. Reply START to resubscribe.")
 
     if body_lower in _HELP_WORDS:
@@ -130,6 +147,10 @@ async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
     # HubSpot sync (background)
     await hubspot_sync(phone=from_number, summary=f"SMS: {masked_body}")
 
+    # Cap SMS length to 320 chars (2 SMS segments)
+    if len(response_text) > SMS_MAX_LENGTH:
+        response_text = response_text[:SMS_MAX_LENGTH - 3] + "..."
+
     return _twiml_reply(response_text)
 
 
@@ -161,7 +182,7 @@ async def _get_sms_history(db: AsyncSession, tenant_id: str, phone: str) -> list
     return history[-20:]
 
 
-async def _handle_opt_out(db: AsyncSession, tenant_id: str, phone: str, to_number: str):
+async def _handle_opt_out(db: AsyncSession, tenant_id: str, phone: str):
     """Process STOP: insert opt-out record + log."""
     await db.execute(
         text("""
