@@ -94,15 +94,15 @@ async def create_engagement_note(
     subject: str = "AI Voice Call",
 ) -> str | None:
     """Create an engagement note on a HubSpot contact."""
+    import time
     async with httpx.AsyncClient() as client:
-        # Create the note
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/notes",
             headers=_headers(),
             json={
                 "properties": {
                     "hs_note_body": body,
-                    "hs_timestamp": "",
+                    "hs_timestamp": str(int(time.time() * 1000)),
                 }
             },
             timeout=10,
@@ -131,8 +131,8 @@ async def create_meeting(
     body: str = "",
 ) -> str | None:
     """Create a HubSpot meeting and associate it with a contact."""
+    import time
     async with httpx.AsyncClient() as client:
-        # Create meeting
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/meetings",
             headers=_headers(),
@@ -143,6 +143,7 @@ async def create_meeting(
                     "hs_meeting_start_time": str(start_ms),
                     "hs_meeting_end_time": str(end_ms),
                     "hs_meeting_outcome": "SCHEDULED",
+                    "hs_timestamp": str(int(time.time() * 1000)),
                 }
             },
             timeout=10,
