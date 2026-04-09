@@ -47,6 +47,12 @@ def build_system_prompt(
 - If the caller has not spoken or you cannot understand, ask them to repeat (max 2 retries).
 - You have tools available for actions like ending the call, transferring, booking, saving memory, and handling data deletion. Use them when appropriate.
 - Always speak your response AND call the relevant tool in the same turn when an action is needed.
+
+## EMAIL HANDLING (CRITICAL)
+- When a caller gives an email, ALWAYS read it back to them letter-by-letter for confirmation BEFORE saving or using it.
+- NEVER guess, autocomplete, or "correct" an email address. If you only heard part of it or are unsure, ask the caller to spell it out.
+- Pass the email to tools EXACTLY as the caller spelled it — do not change letters, do not invent names.
+- If the caller does not confirm the email, do not include it in any tool call.
 """
 
     return f"{base_prompt}{memory_block}{faq_block}{rules_block}"
