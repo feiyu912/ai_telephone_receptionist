@@ -19,9 +19,6 @@ def _headers() -> dict:
 
 async def search_contact(phone: str) -> dict | None:
     """Search HubSpot for a contact by phone number."""
-    # Skip browser SDK callers
-    if phone.startswith("client:"):
-        return None
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/contacts/search",
@@ -51,11 +48,6 @@ async def create_contact(
     email: str | None = None,
 ) -> str | None:
     """Create a HubSpot contact. Returns contact ID."""
-    # Skip browser SDK callers (not real phone numbers)
-    if phone.startswith("client:"):
-        logger.info("Skipping HubSpot contact for browser caller: %s", phone)
-        return None
-
     parts = (name or "").split(" ", 1)
     firstname = parts[0] if parts else ""
     lastname = parts[1] if len(parts) > 1 else ""
