@@ -119,6 +119,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                 "turn_detection": {"type": "server_vad"},
                 "input_audio_format": "g711_ulaw",
                 "output_audio_format": "g711_ulaw",
+                "input_audio_transcription": {"model": "whisper-1"},
                 "voice": "alloy",
                 "instructions": system_prompt,
                 "modalities": ["text", "audio"],
