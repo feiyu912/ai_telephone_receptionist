@@ -203,6 +203,15 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                         if transcript:
                             logger.info("AI: %s", transcript[:80])
                             conversation_history.append({"role": "assistant", "content": transcript})
+                            # Persist incrementally so status_callback sees up-to-date history
+                            try:
+                                factory = get_session_factory()
+                                async with factory() as db:
+                                    await queries.update_voice_session(
+                                        db, call_sid, conversation_history=conversation_history,
+                                    )
+                            except Exception:
+                                logger.debug("Failed to persist AI turn")
 
                     # User transcript
                     elif event_type == "conversation.item.input_audio_transcription.completed":
@@ -210,6 +219,14 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                         if transcript:
                             logger.info("User: %s", transcript[:80])
                             conversation_history.append({"role": "user", "content": transcript})
+                            try:
+                                factory = get_session_factory()
+                                async with factory() as db:
+                                    await queries.update_voice_session(
+                                        db, call_sid, conversation_history=conversation_history,
+                                    )
+                            except Exception:
+                                logger.debug("Failed to persist user turn")
 
                     # Function call
                     elif event_type == "response.function_call_arguments.done":
