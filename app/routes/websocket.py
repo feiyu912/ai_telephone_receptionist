@@ -111,6 +111,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         mark_queue = []
         response_start_timestamp_twilio = None
         conversation_history: list[dict] = []
+        end_call_pending = False  # Set when end_call tool fires; hangup after farewell
 
         # Initialize session — BEFORE asyncio.gather, like the official example
         await openai_ws.send(json.dumps({
@@ -228,6 +229,38 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             except Exception:
                                 logger.debug("Failed to persist user turn")
 
+                    # Response complete — if end_call was triggered, hang up after farewell audio
+                    elif event_type == "response.done":
+                        if end_call_pending:
+                            # Check if this response actually contained spoken audio (the farewell)
+                            output_items = response.get("response", {}).get("output", [])
+                            has_audio = any(
+                                item.get("type") == "message" and any(
+                                    c.get("type") == "audio" for c in item.get("content", [])
+                                )
+                                for item in output_items
+                            )
+                            if has_audio:
+                                logger.info("Farewell finished, hanging up call %s", call_sid)
+                                # Wait for audio to finish playing on caller's side
+                                await asyncio.sleep(2.5)
+                                try:
+                                    await websocket.send_json({
+                                        "event": "stop",
+                                        "streamSid": stream_sid,
+                                    })
+                                except Exception:
+                                    pass
+                                try:
+                                    await websocket.close()
+                                except Exception:
+                                    pass
+                                try:
+                                    await openai_ws.close()
+                                except Exception:
+                                    pass
+                                return
+
                     # Function call
                     elif event_type == "response.function_call_arguments.done":
                         call_id = response.get("call_id", "")
@@ -264,11 +297,13 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                 logger.error("send_to_twilio error: %s", e)
 
         async def handle_tool_call(name: str, args: dict) -> str:
+            nonlocal end_call_pending
             factory = get_session_factory()
             async with factory() as db:
                 tid = tenant_id
                 if name == "end_call":
-                    return "Call ending."
+                    end_call_pending = True
+                    return "Call ending. Say the farewell now, then I will hang up."
                 elif name == "transfer_to_human":
                     await queries.log_analytics_event(db, tid, "transfer_requested", "voice", phone=caller_phone, session_id=call_sid)
                     return "Transferring."
