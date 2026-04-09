@@ -42,6 +42,14 @@ async def search_contact(phone: str) -> dict | None:
         return None
 
 
+def _is_valid_email(email: str | None) -> bool:
+    """Basic email validation."""
+    if not email:
+        return False
+    import re
+    return bool(re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", email))
+
+
 async def create_contact(
     phone: str,
     name: str | None = None,
@@ -57,8 +65,8 @@ async def create_contact(
         "firstname": firstname,
         "lastname": lastname,
     }
-    # Only set email if actually provided (empty string causes dedup issues)
-    if email:
+    # Only set email if it looks valid
+    if _is_valid_email(email):
         properties["email"] = email
 
     async with httpx.AsyncClient() as client:
@@ -73,9 +81,26 @@ async def create_contact(
         # 409 = contact already exists (dedup by email/phone)
         if resp.status_code == 409:
             existing_id = resp.json().get("message", "")
-            # Extract ID from "Contact already exists. Existing ID: 12345"
             if "Existing ID:" in existing_id:
                 return existing_id.split("Existing ID:")[-1].strip()
+        # 400 with email validation error — retry without email
+        if resp.status_code == 400 and "INVALID_EMAIL" in resp.text and "email" in properties:
+            logger.info("Retrying HubSpot contact creation without invalid email: %s", email)
+            del properties["email"]
+            resp2 = await client.post(
+                f"{HUBSPOT_API}/crm/v3/objects/contacts",
+                headers=_headers(),
+                json={"properties": properties},
+                timeout=10,
+            )
+            if resp2.status_code == 201:
+                return resp2.json().get("id")
+            if resp2.status_code == 409:
+                existing_id = resp2.json().get("message", "")
+                if "Existing ID:" in existing_id:
+                    return existing_id.split("Existing ID:")[-1].strip()
+            logger.warning("HubSpot retry failed: %s", resp2.text)
+            return None
         logger.warning("HubSpot create contact failed: %s", resp.text)
         return None
 
