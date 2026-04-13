@@ -101,6 +101,12 @@ async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
         logger.info("SMS from opted-out number: %s", from_number)
         return _twiml_empty()
 
+    # Email confirmation flow: if caller has a pending email confirmation, handle it first
+    from app.services.email_confirm import handle_confirmation_reply
+    confirm_reply = await handle_confirmation_reply(db, tenant.tenant_id, from_number, body)
+    if confirm_reply:
+        return _twiml_reply(confirm_reply)
+
     # Load caller memory
     memories = await queries.lookup_caller_memory(db, tenant.tenant_id, from_number)
     is_returning = len(memories) > 0

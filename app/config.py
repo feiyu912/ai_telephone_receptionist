@@ -28,18 +28,12 @@ class Settings(BaseSettings):
     hubspot_client_id: str = ""
     hubspot_client_secret: str = ""
 
-    # --- Microsoft Graph (Outlook Calendar) ---
+    # --- Microsoft Graph (Outlook Calendar + Email) ---
     ms_tenant_id: str = ""
     ms_client_id: str = ""
     ms_client_secret: str = ""
     ms_calendar_email: str = ""
-
-    # --- SMTP (email notifications) ---
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""
+    ms_sender_email: str = ""  # Mailbox used for sending emails (Mail.Send permission)
 
     # --- Server ---
     host: str = "0.0.0.0"

@@ -21,6 +21,7 @@ from app.services.pii import mask_pii
 from app.services.sms import send_sms, send_call_summary
 from app.services.hubspot import sync_call as hubspot_sync
 from app.services.email import send_voicemail_alert
+from app.services.email_confirm import request_email_confirmation
 from app.prompts.system import build_system_prompt
 from app.config import get_settings
 
@@ -361,7 +362,22 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         company_name=tenant.company_name or "",
                     )
                 except Exception:
-                    logger.debug("Email follow-up skipped (SMTP not configured)")
+                    logger.debug("Email follow-up skipped (email not configured)")
+
+            # Send email confirmation SMS so caller can correct typos
+            if facts.email and tenant and not phone.startswith("client:"):
+                try:
+                    await request_email_confirmation(
+                        db=db,
+                        tenant_id=str(tenant_id),
+                        caller_phone=phone,
+                        from_phone=tenant.phone_number,
+                        captured_email=facts.email,
+                        session_id=call_sid,
+                        company_name=tenant.company_name or "",
+                    )
+                except Exception:
+                    logger.exception("Email confirmation SMS failed for %s", call_sid)
 
         except Exception:
             logger.exception("Post-call processing failed for %s", call_sid)
