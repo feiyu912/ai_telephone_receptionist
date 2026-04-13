@@ -8,8 +8,7 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { getAnalytics } from "@/lib/api";
-
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
+import { useTenantId } from "@/lib/tenant";
 
 interface Analytics {
   total_calls: number;
@@ -21,13 +20,16 @@ interface Analytics {
 export default function OverviewPage() {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const tenantId = useTenantId();
 
   useEffect(() => {
-    getAnalytics(TENANT_ID)
+    if (!tenantId) return;
+    setLoading(true);
+    getAnalytics(tenantId)
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [tenantId]);
 
   if (loading) {
     return (

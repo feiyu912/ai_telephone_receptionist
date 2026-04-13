@@ -9,8 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Phone, Filter, Loader2 } from "lucide-react";
 import { getCalls } from "@/lib/api";
-
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
+import { useTenantId } from "@/lib/tenant";
 
 interface Call {
   call_sid: string;
@@ -45,12 +44,16 @@ export default function CallHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
+  const tenantId = useTenantId();
+
   useEffect(() => {
-    getCalls(TENANT_ID)
+    if (!tenantId) return;
+    setLoading(true);
+    getCalls(tenantId)
       .then(setCalls)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [tenantId]);
 
   const filtered = calls.filter(
     (c) =>

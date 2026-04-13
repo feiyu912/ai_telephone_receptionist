@@ -15,8 +15,9 @@ import {
 import { Plus, Pencil, Trash2, Filter, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 
+import { useTenantId } from "@/lib/tenant";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ai-voice-receptionist-36vr.onrender.com";
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
 
 interface FAQ {
   id: number;
@@ -39,10 +40,13 @@ export default function FaqPage() {
   const [formQuestion, setFormQuestion] = useState("");
   const [formAnswer, setFormAnswer] = useState("");
   const [saving, setSaving] = useState(false);
+  const tenantId = useTenantId();
 
   const fetchFaqs = useCallback(async () => {
+    if (!tenantId) return;
+    setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/faq/${TENANT_ID}`);
+      const res = await fetch(`${API_BASE}/admin/faq/${tenantId}`);
       const data = await res.json();
       setFaqs(data);
     } catch (err) {
@@ -50,7 +54,7 @@ export default function FaqPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tenantId]);
 
   useEffect(() => { fetchFaqs(); }, [fetchFaqs]);
 
@@ -85,7 +89,7 @@ export default function FaqPage() {
     setSaving(true);
     try {
       if (editingFaq) {
-        await fetch(`${API_BASE}/admin/faq/${TENANT_ID}/${editingFaq.id}`, {
+        await fetch(`${API_BASE}/admin/faq/${tenantId}/${editingFaq.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -95,7 +99,7 @@ export default function FaqPage() {
           }),
         });
       } else {
-        await fetch(`${API_BASE}/admin/faq/${TENANT_ID}`, {
+        await fetch(`${API_BASE}/admin/faq/${tenantId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -117,7 +121,7 @@ export default function FaqPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this FAQ?")) return;
     try {
-      await fetch(`${API_BASE}/admin/faq/${TENANT_ID}/${id}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/admin/faq/${tenantId}/${id}`, { method: "DELETE" });
       await fetchFaqs();
     } catch (err) {
       console.error("Failed to delete FAQ:", err);

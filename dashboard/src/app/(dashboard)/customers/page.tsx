@@ -9,8 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Filter, Loader2 } from "lucide-react";
 import { getCustomers } from "@/lib/api";
-
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
+import { useTenantId } from "@/lib/tenant";
 
 interface Customer {
   customer_id: string;
@@ -40,12 +39,16 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
+  const tenantId = useTenantId();
+
   useEffect(() => {
-    getCustomers(TENANT_ID)
+    if (!tenantId) return;
+    setLoading(true);
+    getCustomers(tenantId)
       .then(setCustomers)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [tenantId]);
 
   const filtered = customers.filter(
     (c) =>

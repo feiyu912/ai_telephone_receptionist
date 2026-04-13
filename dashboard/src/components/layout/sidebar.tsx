@@ -11,6 +11,8 @@ import {
   Link2,
   LogOut,
   Shield,
+  Building2,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -18,10 +20,22 @@ import { useAuth } from "@/lib/auth";
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const navItems = [
+    ...(isAdmin
+      ? [
+          {
+            label: "Admin",
+            items: [
+              { name: "All Tenants", href: "/tenants", icon: Building2 },
+              { name: "System Health", href: "/system", icon: Activity },
+            ],
+          },
+        ]
+      : []),
     {
-      label: "Dashboards",
+      label: isAdmin ? "Tenant View" : "Dashboards",
       items: [
         { name: "Overview", href: "/overview", icon: LayoutDashboard },
         { name: "Call History", href: "/calls", icon: Phone },
@@ -45,7 +59,6 @@ export function Sidebar() {
 
   return (
     <aside className="w-60 border-r border-border bg-card h-screen sticky top-0 flex flex-col">
-      {/* Logo */}
       <div className="p-5 border-b border-border">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
@@ -55,7 +68,6 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
         {navItems.map((section) => (
           <div key={section.label} className="mb-6">
@@ -84,7 +96,6 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* User Info */}
       <div className="p-3 border-t border-border space-y-2">
         <div className="flex items-center gap-2 px-3 py-2">
           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">

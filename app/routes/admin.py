@@ -16,6 +16,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+# ── Tenant list ───────────────────────────────────────────────────
+
+@router.get("/tenants")
+async def list_tenants(db: AsyncSession = Depends(get_db)):
+    """List all active tenants for dashboard switcher."""
+    result = await db.execute(
+        text(
+            "SELECT tenant_id, company_name, slug, phone_number, tier "
+            "FROM account_settings WHERE is_active = true ORDER BY company_name"
+        )
+    )
+    return [
+        {
+            "tenant_id": str(r["tenant_id"]),
+            "company_name": r["company_name"],
+            "slug": r["slug"],
+            "phone_number": r["phone_number"],
+            "tier": r["tier"],
+        }
+        for r in result.mappings().all()
+    ]
+
+
 # ── Pydantic models ───────────────────────────────────────────────
 
 class SettingsUpdate(BaseModel):

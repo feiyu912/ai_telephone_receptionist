@@ -11,21 +11,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { getTenantSettings, updateTenantSettings } from "@/lib/api";
-
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
+import { useTenantId, useTenant } from "@/lib/tenant";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const tenantId = useTenantId();
+  const { isAdmin } = useTenant();
 
   useEffect(() => {
-    getTenantSettings(TENANT_ID)
+    if (!tenantId) return;
+    setLoading(true);
+    getTenantSettings(tenantId)
       .then(setSettings)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [tenantId]);
 
   const update = (key: string, value: unknown) => {
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -33,10 +36,10 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
-    if (!settings) return;
+    if (!settings || !tenantId) return;
     setSaving(true);
     try {
-      await updateTenantSettings(TENANT_ID, settings);
+      await updateTenantSettings(tenantId, settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -98,25 +101,32 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          <Card className="p-6 space-y-4">
-            <h3 className="font-medium">Tier</h3>
-            <Select
-              value={String(settings.tier || "starter")}
-              onValueChange={(v) => update("tier", v)}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="starter">Starter</SelectItem>
-                <SelectItem value="growth">Growth</SelectItem>
-                <SelectItem value="pro">Pro</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              Growth/Pro tiers use OpenAI Realtime for sub-second voice latency.
-            </p>
-          </Card>
+          {isAdmin && (
+            <Card className="p-6 space-y-4">
+              <h3 className="font-medium flex items-center gap-2">
+                Tier
+                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                  Admin only
+                </span>
+              </h3>
+              <Select
+                value={String(settings.tier || "starter")}
+                onValueChange={(v) => update("tier", v)}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="starter">Starter</SelectItem>
+                  <SelectItem value="growth">Growth</SelectItem>
+                  <SelectItem value="pro">Pro</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Growth/Pro tiers use OpenAI Realtime for sub-second voice latency.
+              </p>
+            </Card>
+          )}
 
           <div className="flex justify-end gap-2">
             {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}

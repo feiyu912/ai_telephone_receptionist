@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { getCalls, getCustomers } from "@/lib/api";
-
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "11111111-1111-1111-1111-111111111111";
+import { useTenantId } from "@/lib/tenant";
 
 interface Call {
   call_sid: string;
@@ -41,10 +40,13 @@ export function RightPanel() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
+  const tenantId = useTenantId();
+
   useEffect(() => {
-    getCalls(TENANT_ID).then((data) => setCalls(data.slice(0, 5))).catch(() => {});
-    getCustomers(TENANT_ID).then((data) => setCustomers(data.slice(0, 5))).catch(() => {});
-  }, []);
+    if (!tenantId) return;
+    getCalls(tenantId).then((data) => setCalls(data.slice(0, 5))).catch(() => {});
+    getCustomers(tenantId).then((data) => setCustomers(data.slice(0, 5))).catch(() => {});
+  }, [tenantId]);
 
   return (
     <aside className="w-72 border-l border-border bg-card h-screen sticky top-0 overflow-y-auto hidden xl:block">
