@@ -1,6 +1,6 @@
-# POD6 Voice Agent — Hostinger VPS Deployment Guide
+# AI Telephone Receptionist — Hostinger VPS Deployment Guide
 
-This guide walks through deploying the Python voice agent API + Next.js dashboard to a fresh Hostinger VPS.
+This guide walks through deploying the AI Telephone Receptionist voice agent API + Next.js dashboard to a fresh Hostinger VPS.
 
 **Target domain:** `your-domain.com`
 - `api.your-domain.com` → FastAPI voice agent (Twilio webhooks, OpenAI Realtime)
@@ -39,8 +39,8 @@ hostnamectl set-hostname ai-receptionist-prod
 Create a non-root user (recommended for production):
 
 ```bash
-adduser pod6
-usermod -aG sudo pod6
+adduser vozalta
+usermod -aG sudo vozalta
 ```
 
 ---

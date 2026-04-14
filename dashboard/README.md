@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Telephone Receptionist — Dashboard
 
-## Getting Started
+Multi-tenant admin dashboard for the AI Telephone Receptionist voice receptionist platform.
 
-First, run the development server:
+- **Production:** [https://app.your-domain.com](https://app.your-domain.com)
+- **API backend:** [https://api.your-domain.com](https://api.your-domain.com)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Stack
+
+- **Framework:** Next.js 16 (App Router) + React 19
+- **Styling:** TailwindCSS + shadcn/ui
+- **Charts:** Recharts
+- **Icons:** lucide-react
+- **State:** React context (auth + tenant)
+- **Deployment:** Docker (multi-stage build with `output: standalone`)
+
+## Roles
+
+| Role | Login domain | What they see |
+|---|---|---|
+| **Admin** | `*@360dmmc.com` | All tenants + admin pages (System Health, All Tenants) + tenant switcher |
+| **Client** | Other emails | Scoped to their own tenant only — no switcher, limited settings |
+
+Auth currently uses hardcoded demo users in `src/lib/auth.tsx`. **Replace with Supabase Auth or similar before production launch.**
+
+## Pages
+
+| Path | Role | Purpose |
+|---|---|---|
+| `/login` | Public | Sign in |
+| `/overview` | Both | Per-tenant analytics summary |
+| `/calls` | Both | Call history (from `voice_sessions`) |
+| `/customers` | Both | Customer list |
+| `/faq` | Both | FAQ CRUD |
+| `/settings` | Both | Tenant config (admin sees more fields like `tier`) |
+| `/integrations` | Both | Live OAuth status (HubSpot, Microsoft Graph, Twilio, OpenAI) |
+| `/tenants` | Admin only | All Tenants overview with aggregate stats |
+| `/system` | Admin only | System Health (API, DB, Twilio, OpenAI) |
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── (auth)/login/         # Login page
+│   ├── (dashboard)/
+│   │   ├── overview/
+│   │   ├── calls/
+│   │   ├── customers/
+│   │   ├── faq/
+│   │   ├── settings/
+│   │   ├── integrations/
+│   │   ├── tenants/          # Admin only
+│   │   ├── system/           # Admin only
+│   │   └── layout.tsx        # Wraps everything in TenantProvider
+│   ├── layout.tsx            # Root layout (theme + auth)
+│   └── page.tsx              # Redirects to /login or /overview
+├── components/
+│   ├── layout/
+│   │   ├── sidebar.tsx       # Navigation (admin sees extra items)
+│   │   ├── topbar.tsx        # Tenant switcher (admin) or current tenant label (client)
+│   │   └── right-panel.tsx   # Recent calls + customers
+│   ├── dashboard/
+│   │   └── stat-card.tsx
+│   └── ui/                   # shadcn/ui primitives
+└── lib/
+    ├── api.ts                # API client + helper functions
+    ├── auth.tsx              # AuthProvider + useAuth
+    ├── tenant.tsx            # TenantProvider + useTenant + useTenantId
+    └── utils.ts              # Tailwind class merging
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Local Development
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+# → http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+By default the dashboard talks to production API at `https://api.your-domain.com`.
 
-## Learn More
+To point at a local API:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# .env.local
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Production Build
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run build
+npm start
+```
 
-## Deploy on Vercel
+The Dockerfile uses `output: standalone` from `next.config.ts` to produce a minimal runtime image (~150MB).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The dashboard is deployed via Docker Compose alongside the API on the Hostinger VPS. See [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md) for details.
+
+To update production:
+
+```bash
+# On the VPS:
+cd /opt/AI-voice-receptionist
+git pull
+cd deploy
+docker compose up -d --build dashboard
+```
+
+## Adding a New Page
+
+1. Create `src/app/(dashboard)/yourpage/page.tsx`
+2. Use `useTenantId()` to get the current tenant context
+3. Call API helpers from `@/lib/api` (e.g., `getCalls(tenantId)`)
+4. Add to `src/components/layout/sidebar.tsx` navigation
+5. For admin-only pages, gate with `useAuth()` role check + redirect
+
+## Notes
+
+- This Next.js version has breaking changes from training data — see `AGENTS.md` and check `node_modules/next/dist/docs/` for current APIs.
+- Use `React.SubmitEvent<HTMLFormElement>` not the deprecated `React.FormEvent` for form handlers.
