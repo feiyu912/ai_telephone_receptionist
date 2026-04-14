@@ -33,7 +33,7 @@ const DEMO_USERS: Record<string, { password: string; user: User }> = {
       email: "admin@360dmmc.com",
       role: "admin",
       tenantId: "11111111-1111-1111-1111-111111111111",
-      tenantName: "360 Group",
+      tenantName: "YourCompany",
     },
   },
   "emilio@360dmmc.com": {
@@ -42,16 +42,16 @@ const DEMO_USERS: Record<string, { password: string; user: User }> = {
       email: "emilio@360dmmc.com",
       role: "client",
       tenantId: "11111111-1111-1111-1111-111111111111",
-      tenantName: "360 Group",
+      tenantName: "YourCompany",
     },
   },
-  "aplus@example.com": {
-    password: "aplus123",
+  "support@tenantb.com": {
+    password: "aplus2026",
     user: {
-      email: "aplus@example.com",
+      email: "support@tenantb.com",
       role: "client",
       tenantId: "22222222-2222-2222-2222-222222222222",
-      tenantName: "Aplus",
+      tenantName: "TenantB",
     },
   },
 };

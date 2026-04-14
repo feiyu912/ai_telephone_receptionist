@@ -64,7 +64,7 @@ export function Sidebar() {
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
             <Phone className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="font-semibold text-lg">POD6 Voice</span>
+          <span className="font-semibold text-lg">AI Telephone Receptionist</span>
         </div>
       </div>
 

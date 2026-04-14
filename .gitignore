@@ -6,6 +6,9 @@
 # n8n workflows (contain credential references)
 workflows/
 
+# Tenant source documents (provided by clients, not for the repo)
+faqs/
+
 # Supabase schema exports (local reference only)
 supabase tables/
 

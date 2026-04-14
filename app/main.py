@@ -1,6 +1,6 @@
-"""POD6 AI Voice Agent — FastAPI entry point.
+"""AI Telephone Receptionist — FastAPI entry point.
 
-Multi-tenant voice receptionist replacing 14 n8n workflows.
+Multi-tenant AI voice receptionist.
 Handles voice (HTTP + WebSocket), SMS, WhatsApp, and admin API.
 """
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("POD6 Voice Agent starting — base_url=%s", settings.base_url)
+    logger.info("AI Telephone Receptionist starting — base_url=%s", settings.base_url)
     # Start background cleanup task
     cleanup_task = asyncio.create_task(cleanup_loop())
     yield
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="POD6 AI Voice Agent",
+    title="AI Telephone Receptionist",
     version="0.2.0",
     lifespan=lifespan,
 )
@@ -65,4 +65,4 @@ app.include_router(oauth.router)
 @app.head("/")
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "pod6-voice-agent", "version": "0.2.0"}
+    return {"status": "ok", "service": "voz-alta-ai", "version": "0.2.0"}

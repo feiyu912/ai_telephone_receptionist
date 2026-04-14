@@ -17,7 +17,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -40,7 +40,7 @@ export default function LoginPage() {
             <Phone className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold">POD6 Voice Agent</h1>
+            <h1 className="text-xl font-semibold">AI Telephone Receptionist</h1>
             <p className="text-xs text-muted-foreground">AI Receptionist Dashboard</p>
           </div>
         </div>
@@ -95,23 +95,13 @@ export default function LoginPage() {
 
           <div className="mt-6 pt-6 border-t border-border">
             <p className="text-xs text-muted-foreground text-center">
-              Demo accounts:
+              Need access? Contact your administrator.
             </p>
-            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-              <p className="text-center">
-                <span className="font-mono">admin@360dmmc.com</span> / <span className="font-mono">admin360</span>
-                <span className="ml-1 text-primary">(Admin)</span>
-              </p>
-              <p className="text-center">
-                <span className="font-mono">emilio@360dmmc.com</span> / <span className="font-mono">360group</span>
-                <span className="ml-1 text-muted-foreground">(Client)</span>
-              </p>
-            </div>
           </div>
         </Card>
 
         <p className="text-xs text-muted-foreground text-center mt-6">
-          &copy; 2026 360 Group. Powered by POD6 AI.
+          &copy; 2026 YourCompany. Powered by AI Telephone Receptionist.
         </p>
       </div>
     </div>

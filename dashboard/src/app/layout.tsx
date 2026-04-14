@@ -7,8 +7,8 @@ import { AuthProvider } from "@/lib/auth";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "POD6 Voice Agent Dashboard",
-  description: "AI Voice Receptionist Management",
+  title: "AI Telephone Receptionist — AI Receptionist Dashboard",
+  description: "24/7 AI-powered phone agent for small and medium businesses.",
 };
 
 export default function RootLayout({
