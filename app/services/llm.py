@@ -182,15 +182,14 @@ async def chat(
     system_prompt: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "gpt-5-mini",
-    max_tokens: int = 1500,
+    model: str = "gpt-4o-mini",
+    max_tokens: int = 400,
 ) -> ToolCall:
-    """Send a conversation turn to GPT-5-mini with function calling.
+    """Send a conversation turn with function calling.
 
-    max_tokens is generous because gpt-5-mini is a reasoning model — reasoning
-    tokens are deducted from max_completion_tokens before any visible output,
-    so a tight budget (e.g. 300) frequently yields empty text + no tool call
-    and the Twilio call drops into silence.
+    Uses gpt-4o-mini (same model the n8n workflow and fact-extractor use).
+    Avoid reasoning models here — their token accounting breaks with tools
+    and tight budgets, causing empty responses that drop the call.
     """
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(conversation_history)
@@ -202,7 +201,7 @@ async def chat(
         messages=messages,
         tools=VOICE_TOOLS,
         tool_choice="auto",
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
     )
     result = parse_response(response)
     if not result.text and not result.name:
@@ -218,7 +217,7 @@ async def chat_text_only(
     system_prompt: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "gpt-5-mini",
+    model: str = "gpt-4o-mini",
     max_tokens: int = 300,
 ) -> str:
     """Simple text-only chat without function calling (for FAQ responses etc.)."""
@@ -230,7 +229,7 @@ async def chat_text_only(
     response = await client.chat.completions.create(
         model=model,
         messages=messages,
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
     )
     return response.choices[0].message.content or ""
 
@@ -239,10 +238,10 @@ async def chat_stream(
     system_prompt: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "gpt-5-mini",
+    model: str = "gpt-4o-mini",
     max_tokens: int = 300,
 ):
-    """Stream GPT-4 response token-by-token for low-latency TTS piping."""
+    """Stream response token-by-token for low-latency TTS piping."""
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
@@ -251,7 +250,7 @@ async def chat_stream(
     stream = await client.chat.completions.create(
         model=model,
         messages=messages,
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
         stream=True,
     )
     async for chunk in stream:

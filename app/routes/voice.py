@@ -141,10 +141,16 @@ async def starter_gather(request: Request, db: AsyncSession = Depends(get_db)):
             identity_verified=meta.get("identity_verified", False),
             faq_context=faq_context,
         )
-        result = await llm.chat(system_prompt, history, speech_result)
-        response_text = result.text
-        tool_name = result.name
-        tool_args = result.args
+        try:
+            result = await llm.chat(system_prompt, history, speech_result)
+            response_text = result.text
+            tool_name = result.name
+            tool_args = result.args
+        except Exception:
+            logger.exception("llm.chat failed in starter-gather; using fallback")
+            response_text = "Sorry, I'm having trouble right now. Could you repeat that?"
+            tool_name = None
+            tool_args = {}
 
     # Update conversation history
     history.append({"role": "user", "content": speech_result})
