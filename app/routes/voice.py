@@ -195,8 +195,9 @@ async def starter_gather(request: Request, db: AsyncSession = Depends(get_db)):
                 channel="voice", session_id=call_sid,
             )
 
-    # If tool call returned no text, generate a follow-up
-    if not response_text and tool_name:
+    # If tool call returned no text, or LLM returned nothing, prompt the caller
+    # rather than shipping empty TwiML (Twilio drops silent calls).
+    if not response_text:
         response_text = "Got it. Is there anything else I can help you with?"
 
     # Continue conversation

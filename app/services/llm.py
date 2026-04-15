@@ -183,11 +183,14 @@ async def chat(
     conversation_history: list[dict],
     user_message: str,
     model: str = "gpt-5-mini",
-    max_tokens: int = 300,
+    max_tokens: int = 1500,
 ) -> ToolCall:
-    """Send a conversation turn to GPT-4 with function calling.
+    """Send a conversation turn to GPT-5-mini with function calling.
 
-    Returns a ToolCall with optional function name/args and text to speak.
+    max_tokens is generous because gpt-5-mini is a reasoning model — reasoning
+    tokens are deducted from max_completion_tokens before any visible output,
+    so a tight budget (e.g. 300) frequently yields empty text + no tool call
+    and the Twilio call drops into silence.
     """
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(conversation_history)
@@ -201,7 +204,14 @@ async def chat(
         tool_choice="auto",
         max_completion_tokens=max_tokens,
     )
-    return parse_response(response)
+    result = parse_response(response)
+    if not result.text and not result.name:
+        logger.warning(
+            "Empty LLM response; using fallback. finish_reason=%s",
+            response.choices[0].finish_reason,
+        )
+        result.text = "Sorry, I didn't catch that — could you say it another way?"
+    return result
 
 
 async def chat_text_only(
