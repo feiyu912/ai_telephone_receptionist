@@ -14,10 +14,8 @@ import {
 } from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Filter, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
-
+import { API_BASE } from "@/lib/api";
 import { useTenantId } from "@/lib/tenant";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ai-voice-receptionist-36vr.onrender.com";
 
 interface FAQ {
   id: number;
@@ -46,7 +44,9 @@ export default function FaqPage() {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/faq/${tenantId}`);
+      const res = await fetch(`${API_BASE}/admin/faq/${tenantId}`, {
+        credentials: "include",
+      });
       const data = await res.json();
       setFaqs(data);
     } catch (err) {
@@ -91,6 +91,7 @@ export default function FaqPage() {
       if (editingFaq) {
         await fetch(`${API_BASE}/admin/faq/${tenantId}/${editingFaq.id}`, {
           method: "PATCH",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             category: formCategory,
@@ -101,6 +102,7 @@ export default function FaqPage() {
       } else {
         await fetch(`${API_BASE}/admin/faq/${tenantId}`, {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             category: formCategory,
@@ -121,7 +123,10 @@ export default function FaqPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this FAQ?")) return;
     try {
-      await fetch(`${API_BASE}/admin/faq/${tenantId}/${id}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/admin/faq/${tenantId}/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       await fetchFaqs();
     } catch (err) {
       console.error("Failed to delete FAQ:", err);

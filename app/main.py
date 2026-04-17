@@ -10,10 +10,11 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import get_settings
-from app.db.client import shutdown_db
-from app.routes import voice, websocket, token, sms, whatsapp, admin, preview, oauth
+from app.db.client import get_session_factory, shutdown_db
+from app.routes import admin, auth, oauth, preview, sms, token, voice, websocket, whatsapp
 from app.services.cleanup import cleanup_loop
 
 settings = get_settings()
@@ -25,10 +26,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _warmup_db() -> None:
+    """Open a DB connection at startup so the first call doesn't pay
+    TLS+pool+Supabase-resume cost inside Twilio's 15s webhook timeout."""
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            await session.execute(text("SELECT 1"))
+        logger.info("DB warmup ok")
+    except Exception as exc:
+        logger.warning("DB warmup failed (will retry on first request): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("AI Telephone Receptionist starting — base_url=%s", settings.base_url)
-    # Start background cleanup task
+    await _warmup_db()
     cleanup_task = asyncio.create_task(cleanup_loop())
     yield
     logger.info("Shutting down…")
@@ -44,7 +57,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -59,6 +73,7 @@ app.include_router(whatsapp.router)
 app.include_router(admin.router)
 app.include_router(preview.router)
 app.include_router(oauth.router)
+app.include_router(auth.router)
 
 
 @app.get("/")
@@ -66,3 +81,14 @@ app.include_router(oauth.router)
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "voz-alta-ai", "version": "0.2.0"}
+
+
+@app.get("/health/deep")
+async def health_deep():
+    """DB-touching health check. Point an external uptime pinger here
+    (e.g. UptimeRobot every 5 min) to keep the Supabase pool warm so the
+    first voice call doesn't hit Twilio's 15s webhook timeout."""
+    factory = get_session_factory()
+    async with factory() as session:
+        await session.execute(text("SELECT 1"))
+    return {"status": "ok", "db": "ok"}

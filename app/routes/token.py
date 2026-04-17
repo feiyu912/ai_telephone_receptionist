@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from twilio.jwt.access_token import AccessToken
 from twilio.jwt.access_token.grants import VoiceGrant
 from app.config import get_settings
+from app.services.auth import AuthUser, require_admin
 
 router = APIRouter(tags=["token"])
 
 
 @router.get("/voice/twilio-token")
 @router.post("/voice/twilio-token")
-async def twilio_token():
+async def twilio_token(_user: AuthUser = Depends(require_admin)):
     """Generate a Twilio Access Token for the browser Voice SDK.
 
     The browser SDK uses this token to connect to Twilio,

@@ -44,7 +44,9 @@ export default function SystemPage() {
 
       // Tenant list (implies DB connectivity)
       try {
-        const res = await fetch(`${API_BASE}/admin/tenants`);
+        const res = await fetch(`${API_BASE}/admin/tenants`, {
+          credentials: "include",
+        });
         const data = await res.json();
         checks.push({
           name: "Supabase PostgreSQL",

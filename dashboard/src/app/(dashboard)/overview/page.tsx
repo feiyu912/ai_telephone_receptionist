@@ -19,19 +19,16 @@ interface Analytics {
 
 export default function OverviewPage() {
   const [data, setData] = useState<Analytics | null>(null);
-  const [loading, setLoading] = useState(true);
   const tenantId = useTenantId();
 
   useEffect(() => {
     if (!tenantId) return;
-    setLoading(true);
     getAnalytics(tenantId)
       .then(setData)
       .catch(console.error)
-      .finally(() => setLoading(false));
   }, [tenantId]);
 
-  if (loading) {
+  if (!data) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />

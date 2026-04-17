@@ -1,7 +1,8 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ai-voice-receptionist-36vr.onrender.com";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.your-domain.com";
 
 export async function api(path: string, options?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
   });

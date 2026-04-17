@@ -40,20 +40,25 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function CallHistoryPage() {
-  const [calls, setCalls] = useState<Call[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [calls, setCalls] = useState<Call[] | null>(null);
   const [search, setSearch] = useState("");
 
   const tenantId = useTenantId();
 
   useEffect(() => {
     if (!tenantId) return;
-    setLoading(true);
     getCalls(tenantId)
       .then(setCalls)
       .catch(console.error)
-      .finally(() => setLoading(false));
   }, [tenantId]);
+
+  if (!calls) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const filtered = calls.filter(
     (c) =>
@@ -61,14 +66,6 @@ export default function CallHistoryPage() {
       c.caller_phone.includes(search) ||
       c.call_sid.includes(search)
   );
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">

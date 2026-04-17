@@ -1,7 +1,8 @@
 """Application configuration loaded from environment variables."""
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -39,9 +40,25 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     base_url: str = "http://localhost:8000"
+    dashboard_url: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     log_level: str = "info"
+    auth_secret: str = ""
+    dashboard_users_json: str = ""
+    cookie_secure: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        origins = [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
+        if self.dashboard_url and self.dashboard_url not in origins:
+            origins.append(self.dashboard_url)
+        return origins
 
 
 @lru_cache

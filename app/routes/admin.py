@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.client import get_db
+from app.services.auth import AuthUser, require_admin, require_tenant_access
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -19,7 +20,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # ── Tenant list ───────────────────────────────────────────────────
 
 @router.get("/tenants")
-async def list_tenants(db: AsyncSession = Depends(get_db)):
+async def list_tenants(
+    _user: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """List all active tenants for dashboard switcher."""
     result = await db.execute(
         text(
@@ -82,7 +86,11 @@ class FAQUpdate(BaseModel):
 # ── Settings ───────────────────────────────────────────────────────
 
 @router.get("/settings/{tenant_id}")
-async def get_settings(tenant_id: str, db: AsyncSession = Depends(get_db)):
+async def get_settings(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
     """Get tenant settings."""
     result = await db.execute(
         text("SELECT * FROM account_settings WHERE tenant_id = :tid"),
@@ -99,7 +107,10 @@ async def get_settings(tenant_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/settings/{tenant_id}")
 async def update_settings(
-    tenant_id: str, updates: SettingsUpdate, db: AsyncSession = Depends(get_db)
+    tenant_id: str,
+    updates: SettingsUpdate,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update tenant settings (partial update)."""
     fields = updates.model_dump(exclude_none=True)
@@ -128,7 +139,11 @@ async def update_settings(
 # ── FAQ Management ─────────────────────────────────────────────────
 
 @router.get("/faq/{tenant_id}")
-async def list_faqs(tenant_id: str, db: AsyncSession = Depends(get_db)):
+async def list_faqs(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
     """List all FAQs for a tenant."""
     result = await db.execute(
         text("SELECT id, category, question, answer, is_coming_soon FROM faq_entries WHERE tenant_id = :tid ORDER BY category, id"),
@@ -139,7 +154,10 @@ async def list_faqs(tenant_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/faq/{tenant_id}")
 async def create_faq(
-    tenant_id: str, faq: FAQCreate, db: AsyncSession = Depends(get_db)
+    tenant_id: str,
+    faq: FAQCreate,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new FAQ entry."""
     result = await db.execute(
@@ -161,7 +179,11 @@ async def create_faq(
 
 @router.patch("/faq/{tenant_id}/{faq_id}")
 async def update_faq(
-    tenant_id: str, faq_id: int, faq: FAQUpdate, db: AsyncSession = Depends(get_db)
+    tenant_id: str,
+    faq_id: int,
+    faq: FAQUpdate,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update an existing FAQ entry."""
     fields = faq.model_dump(exclude_none=True)
@@ -185,7 +207,10 @@ async def update_faq(
 
 @router.delete("/faq/{tenant_id}/{faq_id}")
 async def delete_faq(
-    tenant_id: str, faq_id: int, db: AsyncSession = Depends(get_db)
+    tenant_id: str,
+    faq_id: int,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete a FAQ entry."""
     await db.execute(
@@ -199,7 +224,11 @@ async def delete_faq(
 # ── Customers ──────────────────────────────────────────────────────
 
 @router.get("/customers/{tenant_id}")
-async def list_customers(tenant_id: str, db: AsyncSession = Depends(get_db)):
+async def list_customers(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
     """List customers for a tenant."""
     result = await db.execute(
         text("""
@@ -219,7 +248,11 @@ async def list_customers(tenant_id: str, db: AsyncSession = Depends(get_db)):
 # ── Call History ───────────────────────────────────────────────────
 
 @router.get("/calls/{tenant_id}")
-async def list_calls(tenant_id: str, db: AsyncSession = Depends(get_db)):
+async def list_calls(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
     """List recent voice sessions for a tenant."""
     result = await db.execute(
         text("""
@@ -236,7 +269,11 @@ async def list_calls(tenant_id: str, db: AsyncSession = Depends(get_db)):
 # ── Analytics Summary ──────────────────────────────────────────────
 
 @router.get("/analytics/{tenant_id}")
-async def analytics_summary(tenant_id: str, db: AsyncSession = Depends(get_db)):
+async def analytics_summary(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
     """Get analytics summary for a tenant."""
     # Total calls
     calls = await db.execute(

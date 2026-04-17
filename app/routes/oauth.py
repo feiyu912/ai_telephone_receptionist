@@ -11,8 +11,7 @@ Tokens are stored encrypted in the tenant_credentials table.
 from __future__ import annotations
 import json
 import logging
-import secrets
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 import httpx
 from sqlalchemy import text
@@ -20,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.client import get_db
 from app.config import get_settings
+from app.services.auth import AuthUser, build_oauth_state, parse_oauth_state, require_tenant_access
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/oauth", tags=["oauth"])
@@ -28,10 +28,13 @@ router = APIRouter(prefix="/oauth", tags=["oauth"])
 # ── HubSpot OAuth ──────────────────────────────────────────────────
 
 @router.get("/hubspot/authorize/{tenant_id}")
-async def hubspot_authorize(tenant_id: str):
+async def hubspot_authorize(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+):
     """Redirect tenant to HubSpot OAuth consent screen."""
     settings = get_settings()
-    state = f"{tenant_id}:{secrets.token_hex(16)}"
+    state = build_oauth_state(tenant_id, "hubspot")
     url = (
         f"https://app.hubspot.com/oauth/authorize"
         f"?client_id={settings.hubspot_client_id}"
@@ -51,8 +54,9 @@ async def hubspot_callback(
     if error:
         return JSONResponse({"error": error}, status_code=400)
 
-    tenant_id = state.split(":")[0] if ":" in state else ""
-    if not tenant_id:
+    try:
+        tenant_id = parse_oauth_state(state, "hubspot")
+    except ValueError:
         return JSONResponse({"error": "Invalid state"}, status_code=400)
 
     settings = get_settings()
@@ -84,10 +88,13 @@ async def hubspot_callback(
 # ── Microsoft OAuth (Outlook Calendar) ─────────────────────────────
 
 @router.get("/microsoft/authorize/{tenant_id}")
-async def microsoft_authorize(tenant_id: str):
+async def microsoft_authorize(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+):
     """Redirect tenant to Microsoft OAuth consent screen."""
     settings = get_settings()
-    state = f"{tenant_id}:{secrets.token_hex(16)}"
+    state = build_oauth_state(tenant_id, "microsoft")
     url = (
         f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
         f"?client_id={settings.ms_client_id}"
@@ -108,8 +115,9 @@ async def microsoft_callback(
     if error:
         return JSONResponse({"error": error}, status_code=400)
 
-    tenant_id = state.split(":")[0] if ":" in state else ""
-    if not tenant_id:
+    try:
+        tenant_id = parse_oauth_state(state, "microsoft")
+    except ValueError:
         return JSONResponse({"error": "Invalid state"}, status_code=400)
 
     settings = get_settings()
@@ -168,7 +176,11 @@ async def get_credential(db: AsyncSession, tenant_id: str, service: str) -> dict
 # ── Credential status endpoint ─────────────────────────────────────
 
 @router.get("/status/{tenant_id}")
-async def credential_status(tenant_id: str, db: AsyncSession = Depends(get_db)):
+async def credential_status(
+    tenant_id: str,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
     """Check which services a tenant has connected."""
     result = await db.execute(
         text("SELECT service, updated_at FROM tenant_credentials WHERE tenant_id = :tid"),

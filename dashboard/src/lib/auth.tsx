@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { API_BASE } from "@/lib/api";
 
 export type UserRole = "admin" | "client";
 
@@ -25,64 +26,66 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
 });
 
-// Demo users — replace with real API auth later
-const DEMO_USERS: Record<string, { password: string; user: User }> = {
-  "admin@360dmmc.com": {
-    password: "admin360",
-    user: {
-      email: "admin@360dmmc.com",
-      role: "admin",
-      tenantId: "11111111-1111-1111-1111-111111111111",
-      tenantName: "YourCompany",
-    },
-  },
-  "emilio@360dmmc.com": {
-    password: "360group",
-    user: {
-      email: "emilio@360dmmc.com",
-      role: "client",
-      tenantId: "11111111-1111-1111-1111-111111111111",
-      tenantName: "YourCompany",
-    },
-  },
-  "support@tenantb.com": {
-    password: "aplus2026",
-    user: {
-      email: "support@tenantb.com",
-      role: "client",
-      tenantId: "22222222-2222-2222-2222-222222222222",
-      tenantName: "TenantB",
-    },
-  },
-};
+function normalizeUser(data: {
+  email: string;
+  role: UserRole;
+  tenant_id: string;
+  tenant_name: string;
+}): User {
+  return {
+    email: data.email,
+    role: data.role,
+    tenantId: data.tenant_id,
+    tenantName: data.tenant_name,
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem("pod6_user");
-    if (stored) {
+    const loadSession = async () => {
       try {
-        setUser(JSON.parse(stored));
-      } catch {}
-    }
-    setIsLoading(false);
+        const res = await fetch(`${API_BASE}/auth/session`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          setUser(null);
+          return;
+        }
+        const data = await res.json();
+        setUser(normalizeUser(data));
+      } catch {
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadSession();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    const entry = DEMO_USERS[email.toLowerCase()];
-    if (entry && entry.password === password) {
-      setUser(entry.user);
-      localStorage.setItem("pod6_user", JSON.stringify(entry.user));
-      return true;
-    }
-    return false;
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    setUser(normalizeUser(data));
+    return true;
   };
 
   const logout = () => {
+    void fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
     setUser(null);
-    localStorage.removeItem("pod6_user");
   };
 
   return (

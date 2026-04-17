@@ -35,20 +35,25 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [search, setSearch] = useState("");
 
   const tenantId = useTenantId();
 
   useEffect(() => {
     if (!tenantId) return;
-    setLoading(true);
     getCustomers(tenantId)
       .then(setCustomers)
       .catch(console.error)
-      .finally(() => setLoading(false));
   }, [tenantId]);
+
+  if (!customers) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const filtered = customers.filter(
     (c) =>
@@ -57,14 +62,6 @@ export default function CustomersPage() {
       c.phone.includes(search) ||
       (c.email || "").toLowerCase().includes(search.toLowerCase())
   );
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
