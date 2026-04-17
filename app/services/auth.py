@@ -10,10 +10,13 @@ import logging
 import time
 from typing import Any
 
+import bcrypt
 from fastapi import Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from app.config import get_settings
+from app.db.client import get_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -87,77 +90,43 @@ def _decode_token(token: str) -> dict[str, Any]:
     return payload
 
 
-def _default_users() -> dict[str, dict[str, Any]]:
-    return {
-        "admin@360dmmc.com": {
-            "password": "admin360",
-            "user": {
-                "email": "admin@360dmmc.com",
-                "role": "admin",
-                "tenant_id": "11111111-1111-1111-1111-111111111111",
-                "tenant_name": "YourCompany",
-            },
-        },
-        "emilio@360dmmc.com": {
-            "password": "360group",
-            "user": {
-                "email": "emilio@360dmmc.com",
-                "role": "client",
-                "tenant_id": "11111111-1111-1111-1111-111111111111",
-                "tenant_name": "YourCompany",
-            },
-        },
-        "support@tenantb.com": {
-            "password": "aplus2026",
-            "user": {
-                "email": "support@tenantb.com",
-                "role": "client",
-                "tenant_id": "22222222-2222-2222-2222-222222222222",
-                "tenant_name": "TenantB",
-            },
-        },
-    }
+_LOOKUP_USER_SQL = text(
+    """
+    SELECT email, password_hash, role, tenant_id::text AS tenant_id, tenant_name
+    FROM dashboard_users
+    WHERE email = :email
+    """
+)
 
 
-def get_dashboard_users() -> dict[str, dict[str, Any]]:
-    settings = get_settings()
-    if not settings.dashboard_users_json:
-        logger.warning("DASHBOARD_USERS_JSON is not configured; using fallback dashboard users.")
-        return _default_users()
+async def authenticate_user(email: str, password: str) -> AuthUser | None:
+    """Look up a dashboard user in Supabase and verify the bcrypt password."""
+    normalized = email.strip().lower()
+    if not normalized or not password:
+        return None
+
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(_LOOKUP_USER_SQL, {"email": normalized})
+        row = result.mappings().first()
+
+    if not row:
+        return None
 
     try:
-        raw_users = json.loads(settings.dashboard_users_json)
-    except json.JSONDecodeError as exc:
-        logger.error("Invalid DASHBOARD_USERS_JSON: %s", exc)
-        return _default_users()
-
-    users: dict[str, dict[str, Any]] = {}
-    for entry in raw_users:
-        email = str(entry.get("email", "")).strip().lower()
-        password = str(entry.get("password", ""))
-        role = str(entry.get("role", "client"))
-        tenant_id = str(entry.get("tenant_id", ""))
-        tenant_name = str(entry.get("tenant_name", ""))
-        if not email or not password or not tenant_id or role not in {"admin", "client"}:
-            continue
-        users[email] = {
-            "password": password,
-            "user": {
-                "email": email,
-                "role": role,
-                "tenant_id": tenant_id,
-                "tenant_name": tenant_name,
-            },
-        }
-    return users or _default_users()
-
-
-def authenticate_user(email: str, password: str) -> AuthUser | None:
-    users = get_dashboard_users()
-    entry = users.get(email.strip().lower())
-    if not entry or not hmac.compare_digest(entry["password"], password):
+        ok = bcrypt.checkpw(password.encode("utf-8"), row["password_hash"].encode("utf-8"))
+    except ValueError:
+        logger.warning("Malformed password_hash for user %s", normalized)
         return None
-    return AuthUser(**entry["user"])
+    if not ok:
+        return None
+
+    return AuthUser(
+        email=row["email"],
+        role=row["role"],
+        tenant_id=row["tenant_id"],
+        tenant_name=row["tenant_name"],
+    )
 
 
 def create_session_token(user: AuthUser) -> str:

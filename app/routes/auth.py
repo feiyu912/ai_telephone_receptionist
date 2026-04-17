@@ -37,7 +37,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 @router.post("/login")
 async def login(body: LoginRequest, response: Response):
-    user = authenticate_user(body.email, body.password)
+    user = await authenticate_user(body.email, body.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 

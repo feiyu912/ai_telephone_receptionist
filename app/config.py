@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     log_level: str = "info"
     auth_secret: str = ""
-    dashboard_users_json: str = ""
     cookie_secure: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
