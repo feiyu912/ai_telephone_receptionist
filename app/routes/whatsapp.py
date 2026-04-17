@@ -19,6 +19,7 @@ from app.db import queries
 from app.services import llm
 from app.services.hubspot import sync_call as hubspot_sync
 from app.services.pii import mask_pii
+from app.services.twilio_validation import verify_twilio_signature
 from app.prompts.system import build_system_prompt
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ _HELP_WORDS = {"help", "info"}
 _START_WORDS = {"start", "unstop", "subscribe"}
 
 
-@router.post("/inbound")
+@router.post("/inbound", dependencies=[Depends(verify_twilio_signature)])
 async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle inbound WhatsApp message from Twilio."""
     form = await request.form()

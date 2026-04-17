@@ -22,6 +22,7 @@ from app.db import queries
 from app.services import llm
 from app.services.hubspot import sync_call as hubspot_sync
 from app.services.pii import mask_pii
+from app.services.twilio_validation import verify_twilio_signature
 from app.prompts.system import build_system_prompt
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def _is_quiet_hours(timezone: str = "America/Chicago") -> bool:
     return now.hour >= 21 or now.hour < 8
 
 
-@router.post("/inbound")
+@router.post("/inbound", dependencies=[Depends(verify_twilio_signature)])
 async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle inbound SMS from Twilio."""
     form = await request.form()

@@ -22,6 +22,7 @@ from app.services.sms import send_sms, send_call_summary
 from app.services.hubspot import sync_call as hubspot_sync
 from app.services.email import send_voicemail_alert
 from app.services.email_confirm import request_email_confirmation
+from app.services.twilio_validation import verify_twilio_signature
 from app.prompts.system import build_system_prompt
 from app.config import get_settings
 
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/voice", tags=["voice"])
 
 # ── Incoming Call ──────────────────────────────────────────────────
 
-@router.post("/incoming-call")
+@router.post("/incoming-call", dependencies=[Depends(verify_twilio_signature)])
 async def incoming_call(request: Request, db: AsyncSession = Depends(get_db)):
     """Twilio POSTs here when a call arrives. Resolves tenant, routes by tier."""
     form = await request.form()
@@ -80,7 +81,7 @@ async def incoming_call(request: Request, db: AsyncSession = Depends(get_db)):
 
 # ── Starter Tier: HTTP Gather/Say Loop ─────────────────────────────
 
-@router.post("/starter-gather")
+@router.post("/starter-gather", dependencies=[Depends(verify_twilio_signature)])
 async def starter_gather(request: Request, db: AsyncSession = Depends(get_db)):
     """Handles Twilio <Gather> callback with caller speech for Starter tier."""
     form = await request.form()
@@ -217,7 +218,7 @@ async def starter_gather(request: Request, db: AsyncSession = Depends(get_db)):
 
 # ── Voicemail ──────────────────────────────────────────────────────
 
-@router.post("/voicemail")
+@router.post("/voicemail", dependencies=[Depends(verify_twilio_signature)])
 async def voicemail(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle voicemail recording completion."""
     form = await request.form()
@@ -241,7 +242,7 @@ async def voicemail(request: Request, db: AsyncSession = Depends(get_db)):
 
 # ── Status Callback (post-call processing) ─────────────────────────
 
-@router.post("/status-callback")
+@router.post("/status-callback", dependencies=[Depends(verify_twilio_signature)])
 async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
     """Twilio calls this when a call ends. Triggers fact extraction + memory save."""
     form = await request.form()

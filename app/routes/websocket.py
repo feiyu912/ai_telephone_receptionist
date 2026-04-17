@@ -42,7 +42,11 @@ async def media_stream(websocket: WebSocket, call_sid: str):
     system_prompt = "You are a helpful AI receptionist."
     greeting = "Hello! How can I help you?"
 
-    # Process initial Twilio events to get stream_sid and tenant config
+    # Process initial Twilio events to get stream_sid and tenant config.
+    # SECURITY: tenant_id is resolved from the server-side voice_sessions
+    # row (keyed by call_sid, created in /voice/incoming-call). We do NOT
+    # trust customParameters.tenant_id — a crafted start event could
+    # otherwise impersonate any tenant and leak their prompt / FAQs.
     async for message in websocket.iter_text():
         data = json.loads(message)
         if data["event"] == "connected":
@@ -50,46 +54,60 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         elif data["event"] == "start":
             start = data["start"]
             stream_sid = start["streamSid"]
-            custom = start.get("customParameters", {})
-            tenant_id = custom.get("tenant_id", "")
-            caller_phone = custom.get("caller_phone", "")
-            is_returning = custom.get("is_returning", "false") == "true"
-            logger.info("Stream started: sid=%s tenant=%s", stream_sid, tenant_id)
 
-            # Load tenant config
             try:
                 factory = get_session_factory()
                 async with factory() as db:
-                    tenant = await queries.get_tenant_by_id(db, tenant_id) if tenant_id else None
-                    if tenant:
-                        memories = await queries.lookup_caller_memory(db, tenant.tenant_id, caller_phone)
-                        faqs = await queries.get_faq_entries(db, tenant.tenant_id)
-                        faq_context = "\n".join(f"Q: {f['question']}\nA: {f['answer']}" for f in faqs[:30])
-                        system_prompt = build_system_prompt(tenant, memories, is_returning, faq_context=faq_context)
-                        if is_returning:
-                            name_mem = next((m for m in memories if m.memory_key == "name"), None)
-                            name = name_mem.memory_value if name_mem else None
-                            if name and tenant.greeting_returning:
-                                greeting = tenant.greeting_returning.replace("{name}", name)
-                            elif name:
-                                greeting = f"Welcome back, {name}! How can I help you today?"
-                            else:
-                                greeting = tenant.greeting_returning or "Welcome back!"
-                        else:
-                            greeting = tenant.greeting_new or (
-                                f"Thank you for calling {tenant.company_name or 'us'}. "
-                                "How can I help you today?"
-                            )
-                        from app.models.schemas import VoiceSession
-                        session = VoiceSession(
-                            call_sid=call_sid, caller_phone=caller_phone,
-                            called_number=tenant.phone_number,
-                            tenant_id=tenant.tenant_id,
-                            tier=tenant.tier, selected_voice=tenant.selected_voice,
+                    voice_session = await queries.get_voice_session(db, call_sid)
+                    if not voice_session:
+                        logger.warning(
+                            "WebSocket start for unknown call_sid=%s — closing",
+                            call_sid,
                         )
-                        await queries.create_voice_session(db, session)
+                        await websocket.close(code=1008)
+                        return
+
+                    tenant_id = voice_session["tenant_id"]
+                    caller_phone = voice_session["caller_phone"]
+                    logger.info("Stream started: sid=%s tenant=%s", stream_sid, tenant_id)
+
+                    tenant = await queries.get_tenant_by_id(db, tenant_id)
+                    if not tenant:
+                        logger.warning("Tenant %s not found for call %s", tenant_id, call_sid)
+                        await websocket.close(code=1008)
+                        return
+
+                    memories = await queries.lookup_caller_memory(
+                        db, tenant.tenant_id, caller_phone
+                    )
+                    is_returning = len(memories) > 0
+                    faqs = await queries.get_faq_entries(db, tenant.tenant_id)
+                    faq_context = "\n".join(
+                        f"Q: {f['question']}\nA: {f['answer']}" for f in faqs[:30]
+                    )
+                    system_prompt = build_system_prompt(
+                        tenant, memories, is_returning, faq_context=faq_context
+                    )
+                    if is_returning:
+                        name_mem = next(
+                            (m for m in memories if m.memory_key == "name"), None
+                        )
+                        name = name_mem.memory_value if name_mem else None
+                        if name and tenant.greeting_returning:
+                            greeting = tenant.greeting_returning.replace("{name}", name)
+                        elif name:
+                            greeting = f"Welcome back, {name}! How can I help you today?"
+                        else:
+                            greeting = tenant.greeting_returning or "Welcome back!"
+                    else:
+                        greeting = tenant.greeting_new or (
+                            f"Thank you for calling {tenant.company_name or 'us'}. "
+                            "How can I help you today?"
+                        )
             except Exception:
-                logger.exception("Failed to load tenant config")
+                logger.exception("Failed to load tenant config for call %s", call_sid)
+                await websocket.close(code=1011)
+                return
             break  # Got start event, proceed to OpenAI connection
 
     if not stream_sid:
