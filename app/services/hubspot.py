@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+import time
 import httpx
 from app.config import get_settings
 
@@ -111,7 +112,6 @@ async def create_engagement_note(
     subject: str = "AI Voice Call",
 ) -> str | None:
     """Create an engagement note on a HubSpot contact."""
-    import time
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/notes",
@@ -148,7 +148,6 @@ async def create_meeting(
     body: str = "",
 ) -> str | None:
     """Create a HubSpot meeting and associate it with a contact."""
-    import time
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/meetings",

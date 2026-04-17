@@ -52,7 +52,8 @@ async def hubspot_callback(
 ):
     """Handle HubSpot OAuth callback — exchange code for tokens."""
     if error:
-        return JSONResponse({"error": error}, status_code=400)
+        logger.warning("HubSpot OAuth returned error: %s", error)
+        return JSONResponse({"error": "OAuth authorization was declined"}, status_code=400)
 
     try:
         tenant_id = parse_oauth_state(state, "hubspot")
@@ -73,7 +74,11 @@ async def hubspot_callback(
         )
 
     if resp.status_code != 200:
-        return JSONResponse({"error": "Token exchange failed", "detail": resp.text}, status_code=400)
+        logger.warning(
+            "HubSpot token exchange failed for tenant %s: status=%s body=%s",
+            tenant_id, resp.status_code, resp.text,
+        )
+        return JSONResponse({"error": "Token exchange failed"}, status_code=400)
 
     tokens = resp.json()
     await _save_credential(db, tenant_id, "hubspot", {
@@ -113,7 +118,8 @@ async def microsoft_callback(
 ):
     """Handle Microsoft OAuth callback."""
     if error:
-        return JSONResponse({"error": error}, status_code=400)
+        logger.warning("Microsoft OAuth returned error: %s", error)
+        return JSONResponse({"error": "OAuth authorization was declined"}, status_code=400)
 
     try:
         tenant_id = parse_oauth_state(state, "microsoft")
@@ -135,7 +141,11 @@ async def microsoft_callback(
         )
 
     if resp.status_code != 200:
-        return JSONResponse({"error": "Token exchange failed", "detail": resp.text}, status_code=400)
+        logger.warning(
+            "Microsoft token exchange failed for tenant %s: status=%s body=%s",
+            tenant_id, resp.status_code, resp.text,
+        )
+        return JSONResponse({"error": "Token exchange failed"}, status_code=400)
 
     tokens = resp.json()
     await _save_credential(db, tenant_id, "microsoft", {

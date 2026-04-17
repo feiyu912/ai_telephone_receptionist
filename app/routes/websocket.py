@@ -176,8 +176,10 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                 if openai_ws.state.name == "OPEN":
                     await openai_ws.close()
 
+        audio_chunks_sent = 0
+
         async def send_to_twilio():
-            nonlocal last_assistant_item, response_start_timestamp_twilio
+            nonlocal last_assistant_item, response_start_timestamp_twilio, audio_chunks_sent
             try:
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
@@ -196,13 +198,11 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             "streamSid": stream_sid,
                             "media": {"payload": audio_payload},
                         })
-                        if not hasattr(send_to_twilio, '_count'):
-                            send_to_twilio._count = 0
-                        send_to_twilio._count += 1
-                        if send_to_twilio._count == 1:
+                        audio_chunks_sent += 1
+                        if audio_chunks_sent == 1:
                             logger.info("AUDIO SENT to Twilio: first chunk %d chars, streamSid=%s", len(audio_payload), stream_sid)
-                        elif send_to_twilio._count % 50 == 0:
-                            logger.info("AUDIO SENT to Twilio: %d chunks total", send_to_twilio._count)
+                        elif audio_chunks_sent % 50 == 0:
+                            logger.info("AUDIO SENT to Twilio: %d chunks total", audio_chunks_sent)
 
                         if response.get("item_id") and response["item_id"] != last_assistant_item:
                             response_start_timestamp_twilio = latest_media_timestamp

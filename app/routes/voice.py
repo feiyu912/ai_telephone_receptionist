@@ -224,14 +224,21 @@ async def voicemail(request: Request, db: AsyncSession = Depends(get_db)):
     form = await request.form()
     call_sid = form.get("CallSid", "")
     recording_url = form.get("RecordingUrl", "")
-    tenant_id = form.get("tenant_id", "") or request.query_params.get("tenant_id", "")
 
-    if tenant_id and call_sid:
-        await queries.log_analytics_event(
-            db, tenant_id, "voicemail_received", "voice",
-            session_id=call_sid,
-            event_data={"recording_url": recording_url},
-        )
+    # Resolve tenant from the server-side voice_session, not from
+    # form/query params — otherwise analytics events can be logged
+    # against an arbitrary tenant by anyone able to reach the endpoint.
+    # (Also belt-and-suspenders on top of verify_twilio_signature.)
+    if call_sid:
+        session_data = await queries.get_voice_session(db, call_sid)
+        if session_data:
+            await queries.log_analytics_event(
+                db, str(session_data["tenant_id"]), "voicemail_received", "voice",
+                session_id=call_sid,
+                event_data={"recording_url": recording_url},
+            )
+        else:
+            logger.warning("Voicemail for unknown call_sid=%s — dropping", call_sid)
 
     return _twiml_response(
         '<Response><Say voice="Polly.Matthew-Neural">'
