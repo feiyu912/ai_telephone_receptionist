@@ -15,14 +15,14 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   login: async () => false,
-  logout: () => {},
+  logout: async () => {},
   isLoading: true,
 });
 
@@ -80,12 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const logout = () => {
-    void fetch(`${API_BASE}/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-    setUser(null);
+  const logout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Even if the logout request fails, clear local state so the user
+      // stops being treated as authenticated in the UI.
+    } finally {
+      setUser(null);
+    }
   };
 
   return (

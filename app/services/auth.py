@@ -42,18 +42,28 @@ def _urlsafe_b64decode(raw: str) -> bytes:
 
 
 def _auth_secret() -> bytes:
+    """Return the HMAC key for signing session / OAuth-state tokens.
+
+    In production (COOKIE_SECURE=true) AUTH_SECRET MUST be set explicitly;
+    otherwise tokens would be signed with something else (Twilio token,
+    OpenAI key, DB URL) that already appears in error traces and logs —
+    leaking any of those would let an attacker forge sessions.
+    """
     settings = get_settings()
     if settings.auth_secret:
         return settings.auth_secret.encode("utf-8")
 
-    derived = (
-        settings.twilio_auth_token
-        or settings.openai_api_key
-        or settings.database_url
-        or "voz-alta-dev-secret"
+    if settings.cookie_secure:
+        raise RuntimeError(
+            "AUTH_SECRET must be set when COOKIE_SECURE=true. "
+            "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
+        )
+
+    logger.warning(
+        "AUTH_SECRET is not configured; using a dev-only fallback secret. "
+        "Set AUTH_SECRET before running with COOKIE_SECURE=true."
     )
-    logger.warning("AUTH_SECRET is not configured; using a derived fallback secret.")
-    return derived.encode("utf-8")
+    return b"voz-alta-dev-secret-do-not-use-in-prod"
 
 
 def _sign_payload(payload_b64: str) -> str:

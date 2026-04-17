@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { ErrorCard } from "@/components/dashboard/error-card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -36,16 +37,23 @@ function timeAgo(dateStr: string): string {
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const tenantId = useTenantId();
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!tenantId) return;
+    setError(null);
+    setCustomers(null);
     getCustomers(tenantId)
       .then(setCustomers)
-      .catch(console.error)
+      .catch((e: Error) => setError(e.message || "Request failed"));
   }, [tenantId]);
+
+  useEffect(load, [load]);
+
+  if (error) return <ErrorCard message={error} onRetry={load} />;
 
   if (!customers) {
     return (

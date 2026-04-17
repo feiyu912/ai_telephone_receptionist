@@ -32,27 +32,42 @@ export default function SystemPage() {
       // Backend health
       try {
         const res = await fetch(`${API_BASE}/health`);
-        const data = await res.json();
-        checks.push({
-          name: "Backend API (Render)",
-          status: res.ok ? "up" : "down",
-          detail: `${data.service} v${data.version ?? "?"}`,
-        });
+        if (!res.ok) {
+          checks.push({ name: "Backend API", status: "down", detail: `HTTP ${res.status}` });
+        } else {
+          const data = await res.json();
+          checks.push({
+            name: "Backend API",
+            status: "up",
+            detail: `${data.service} v${data.version ?? "?"}`,
+          });
+        }
       } catch {
-        checks.push({ name: "Backend API (Render)", status: "down", detail: "Unreachable" });
+        checks.push({ name: "Backend API", status: "down", detail: "Unreachable" });
       }
 
-      // Tenant list (implies DB connectivity)
+      // Tenant list (implies DB connectivity + admin auth)
       try {
         const res = await fetch(`${API_BASE}/admin/tenants`, {
           credentials: "include",
         });
-        const data = await res.json();
-        checks.push({
-          name: "Supabase PostgreSQL",
-          status: res.ok ? "up" : "down",
-          detail: `${data.length} tenant${data.length === 1 ? "" : "s"} active`,
-        });
+        if (!res.ok) {
+          checks.push({
+            name: "Supabase PostgreSQL",
+            status: "down",
+            detail: res.status === 401 || res.status === 403
+              ? "Not authorized"
+              : `HTTP ${res.status}`,
+          });
+        } else {
+          const data = await res.json();
+          const count = Array.isArray(data) ? data.length : 0;
+          checks.push({
+            name: "Supabase PostgreSQL",
+            status: "up",
+            detail: `${count} tenant${count === 1 ? "" : "s"} active`,
+          });
+        }
       } catch {
         checks.push({ name: "Supabase PostgreSQL", status: "down", detail: "Query failed" });
       }

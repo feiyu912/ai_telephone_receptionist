@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { ErrorCard } from "@/components/dashboard/error-card";
 import { Input } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -41,16 +42,23 @@ function timeAgo(dateStr: string): string {
 
 export default function CallHistoryPage() {
   const [calls, setCalls] = useState<Call[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const tenantId = useTenantId();
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!tenantId) return;
+    setError(null);
+    setCalls(null);
     getCalls(tenantId)
       .then(setCalls)
-      .catch(console.error)
+      .catch((e: Error) => setError(e.message || "Request failed"));
   }, [tenantId]);
+
+  useEffect(load, [load]);
+
+  if (error) return <ErrorCard message={error} onRetry={load} />;
 
   if (!calls) {
     return (

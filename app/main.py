@@ -15,6 +15,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db.client import get_session_factory, shutdown_db
 from app.routes import admin, auth, oauth, preview, sms, token, voice, websocket, whatsapp
+from app.services.auth import _auth_secret
 from app.services.cleanup import cleanup_loop
 
 settings = get_settings()
@@ -41,6 +42,9 @@ async def _warmup_db() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("AI Telephone Receptionist starting — base_url=%s", settings.base_url)
+    # Fail fast on misconfigured prod: AUTH_SECRET must be set when
+    # cookies are served over HTTPS. _auth_secret() raises in that case.
+    _auth_secret()
     await _warmup_db()
     cleanup_task = asyncio.create_task(cleanup_loop())
     yield

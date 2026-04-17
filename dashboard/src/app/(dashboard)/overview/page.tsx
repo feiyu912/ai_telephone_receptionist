@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { ErrorCard } from "@/components/dashboard/error-card";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import {
@@ -19,14 +20,21 @@ interface Analytics {
 
 export default function OverviewPage() {
   const [data, setData] = useState<Analytics | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const tenantId = useTenantId();
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!tenantId) return;
+    setError(null);
+    setData(null);
     getAnalytics(tenantId)
       .then(setData)
-      .catch(console.error)
+      .catch((e: Error) => setError(e.message || "Request failed"));
   }, [tenantId]);
+
+  useEffect(load, [load]);
+
+  if (error) return <ErrorCard message={error} onRetry={load} />;
 
   if (!data) {
     return (
