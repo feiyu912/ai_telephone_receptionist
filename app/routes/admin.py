@@ -67,6 +67,18 @@ class SettingsUpdate(BaseModel):
     booking_advance_days: int | None = None
     memory_expiry_days: int | None = None
     hubspot_booking_link: str | None = None
+    # Per-tenant integration credentials (multi-tenant overhaul)
+    sender_email: str | None = None
+    calendar_email: str | None = None
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    hubspot_access_token: str | None = None
+
+
+# Columns that must never leave the server as plaintext. GET replaces them
+# with a `<field>_set: bool` marker; PATCH accepts them but treats an empty
+# string as "no change" so an unedited dashboard form never wipes them.
+_SECRET_FIELDS = ("twilio_auth_token", "hubspot_access_token")
 
 
 class FAQCreate(BaseModel):
@@ -91,7 +103,8 @@ async def get_settings(
     _user: AuthUser = Depends(require_tenant_access),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get tenant settings."""
+    """Get tenant settings. Secret fields are redacted to boolean markers so
+    they never round-trip through the browser."""
     result = await db.execute(
         text("SELECT * FROM account_settings WHERE tenant_id = :tid"),
         {"tid": tenant_id},
@@ -102,6 +115,9 @@ async def get_settings(
     data = dict(row)
     if "tenant_id" in data:
         data["tenant_id"] = str(data["tenant_id"])
+    for field in _SECRET_FIELDS:
+        data[f"{field}_set"] = bool(data.get(field))
+        data.pop(field, None)
     return data
 
 
@@ -112,8 +128,13 @@ async def update_settings(
     _user: AuthUser = Depends(require_tenant_access),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update tenant settings (partial update)."""
+    """Update tenant settings (partial update). Empty strings on secret
+    fields are treated as 'no change' — so re-submitting the form after
+    editing only the non-secret tabs doesn't wipe Twilio/HubSpot tokens."""
     fields = updates.model_dump(exclude_none=True)
+    for field in _SECRET_FIELDS:
+        if fields.get(field) == "":
+            fields.pop(field)
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 

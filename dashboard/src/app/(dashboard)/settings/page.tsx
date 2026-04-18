@@ -66,6 +66,7 @@ export default function SettingsPage() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="voice">Voice & Greetings</TabsTrigger>
           <TabsTrigger value="hours">Business Hours</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
         </TabsList>
 
@@ -241,6 +242,89 @@ export default function SettingsPage() {
                   onChange={(e) => update("business_hours_timezone", e.target.value)}
                 />
               </div>
+            </div>
+          </Card>
+
+          <div className="flex justify-end gap-2">
+            {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="integrations" className="space-y-4 mt-4">
+          <Card className="p-6 space-y-4">
+            <div>
+              <h3 className="font-medium">Outlook mailbox</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Per-tenant mailbox for outbound mail and calendar bookings. Leave blank to fall back to the shared <code>MS_SENDER_EMAIL</code> / <code>MS_CALENDAR_EMAIL</code> env vars.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Sender email</Label>
+                <Input
+                  placeholder="voice@yourcompany.com"
+                  value={String(settings.sender_email || "")}
+                  onChange={(e) => update("sender_email", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Calendar email</Label>
+                <Input
+                  placeholder="bookings@yourcompany.com"
+                  value={String(settings.calendar_email || "")}
+                  onChange={(e) => update("calendar_email", e.target.value)}
+                />
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 space-y-4">
+            <div>
+              <h3 className="font-medium">Twilio (own subaccount)</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Use your own Twilio subaccount for inbound signature validation and outbound SMS. Leave blank to share the platform account.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Account SID</Label>
+                <Input
+                  placeholder="AC…"
+                  value={String(settings.twilio_account_sid || "")}
+                  onChange={(e) => update("twilio_account_sid", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Auth token {settings.twilio_auth_token_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
+                <Input
+                  type="password"
+                  placeholder={settings.twilio_auth_token_set ? "••••••••" : "paste token"}
+                  value={String(settings.twilio_auth_token || "")}
+                  onChange={(e) => update("twilio_auth_token", e.target.value)}
+                />
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 space-y-4">
+            <div>
+              <h3 className="font-medium">HubSpot CRM</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Private-app access token for this tenant&apos;s HubSpot portal. Leave blank to share the platform portal.
+              </p>
+            </div>
+            <div>
+              <Label>Access token {settings.hubspot_access_token_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
+              <Input
+                type="password"
+                placeholder={settings.hubspot_access_token_set ? "••••••••" : "paste token"}
+                value={String(settings.hubspot_access_token || "")}
+                onChange={(e) => update("hubspot_access_token", e.target.value)}
+              />
             </div>
           </Card>
 
