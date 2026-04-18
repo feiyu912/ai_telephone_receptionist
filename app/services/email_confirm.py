@@ -33,6 +33,8 @@ async def request_email_confirmation(
     captured_email: str,
     session_id: str,
     company_name: str = "",
+    twilio_account_sid: str | None = None,
+    twilio_auth_token: str | None = None,
 ) -> bool:
     """Send the caller an SMS asking to confirm the captured email."""
     if not captured_email or not caller_phone or caller_phone.startswith("client:"):
@@ -67,7 +69,11 @@ async def request_email_confirmation(
     if len(msg) > 320:
         msg = msg[:317] + "..."
 
-    sid = await send_sms(caller_phone, from_phone, msg)
+    sid = await send_sms(
+        caller_phone, from_phone, msg,
+        account_sid=twilio_account_sid,
+        auth_token=twilio_auth_token,
+    )
     if sid:
         await queries.log_analytics_event(
             db, tenant_id, "email_confirmation_sent", "sms",

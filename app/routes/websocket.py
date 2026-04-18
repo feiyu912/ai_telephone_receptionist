@@ -327,10 +327,10 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     return "Transferring."
                 elif name == "book_appointment":
                     await queries.update_voice_session(db, call_sid, booking_context={"requested": True, "details": args})
-                    # Try to book via Outlook Calendar
+                    # Try to book via Outlook Calendar (per-tenant mailbox + timezone, fall back to global env)
                     from app.services.calendar import book_appointment
                     from app.config import get_settings as gs
-                    cal_email = gs().ms_calendar_email
+                    cal_email = tenant.calendar_email or gs().ms_calendar_email
                     if cal_email:
                         result = await book_appointment(
                             calendar_email=cal_email,
@@ -340,6 +340,10 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             preferred_date=args.get("preferred_date", ""),
                             preferred_time=args.get("preferred_time", ""),
                             purpose=args.get("purpose", "Consultation"),
+                            timezone=tenant.business_hours_timezone,
+                            duration_minutes=tenant.booking_duration_minutes,
+                            business_hours_start=tenant.business_hours_start,
+                            business_hours_end=tenant.business_hours_end,
                         )
                         if result.get("success"):
                             return f"Appointment booked for {result['slot']}. Confirm with the caller."

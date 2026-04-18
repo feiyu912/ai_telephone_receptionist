@@ -35,6 +35,13 @@ class TenantConfig(BaseModel):
     pii_verification_required: bool = True
     webhook_base_url: str | None = None
     is_active: bool = True
+    # Per-tenant integration credentials (nullable; None → fall back to
+    # the global env var). See scripts/migrate_multitenant_integrations.py.
+    sender_email: str | None = None
+    calendar_email: str | None = None
+    hubspot_access_token: str | None = None
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
 
 
 class CallerMemory(BaseModel):

@@ -1,7 +1,13 @@
-"""HubSpot CRM integration — contact sync and engagement notes."""
+"""HubSpot CRM integration — contact sync and engagement notes.
+
+Per-tenant access tokens are optional. Pass `access_token` to write to a
+tenant's own HubSpot portal; omit it to fall back to the global
+HUBSPOT_ACCESS_TOKEN env var.
+"""
 
 from __future__ import annotations
 import logging
+import re
 import time
 import httpx
 from app.config import get_settings
@@ -11,19 +17,20 @@ logger = logging.getLogger(__name__)
 HUBSPOT_API = "https://api.hubapi.com"
 
 
-def _headers() -> dict:
+def _headers(access_token: str | None = None) -> dict:
+    token = access_token or get_settings().hubspot_access_token
     return {
-        "Authorization": f"Bearer {get_settings().hubspot_access_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
 
-async def search_contact(phone: str) -> dict | None:
+async def search_contact(phone: str, access_token: str | None = None) -> dict | None:
     """Search HubSpot for a contact by phone number."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/contacts/search",
-            headers=_headers(),
+            headers=_headers(access_token),
             json={
                 "filterGroups": [{
                     "filters": [{
@@ -43,18 +50,20 @@ async def search_contact(phone: str) -> dict | None:
         return None
 
 
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
 def _is_valid_email(email: str | None) -> bool:
-    """Basic email validation."""
     if not email:
         return False
-    import re
-    return bool(re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", email))
+    return bool(_EMAIL_RE.match(email))
 
 
 async def create_contact(
     phone: str,
     name: str | None = None,
     email: str | None = None,
+    access_token: str | None = None,
 ) -> str | None:
     """Create a HubSpot contact. Returns contact ID."""
     parts = (name or "").split(" ", 1)
@@ -73,7 +82,7 @@ async def create_contact(
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/contacts",
-            headers=_headers(),
+            headers=_headers(access_token),
             json={"properties": properties},
             timeout=10,
         )
@@ -90,7 +99,7 @@ async def create_contact(
             del properties["email"]
             resp2 = await client.post(
                 f"{HUBSPOT_API}/crm/v3/objects/contacts",
-                headers=_headers(),
+                headers=_headers(access_token),
                 json={"properties": properties},
                 timeout=10,
             )
@@ -110,12 +119,13 @@ async def create_engagement_note(
     contact_id: str,
     body: str,
     subject: str = "AI Voice Call",
+    access_token: str | None = None,
 ) -> str | None:
     """Create an engagement note on a HubSpot contact."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/notes",
-            headers=_headers(),
+            headers=_headers(access_token),
             json={
                 "properties": {
                     "hs_note_body": body,
@@ -133,7 +143,7 @@ async def create_engagement_note(
         # Associate note with contact
         await client.put(
             f"{HUBSPOT_API}/crm/v4/objects/notes/{note_id}/associations/contacts/{contact_id}",
-            headers=_headers(),
+            headers=_headers(access_token),
             json=[{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 202}],
             timeout=10,
         )
@@ -146,12 +156,13 @@ async def create_meeting(
     start_ms: int,
     end_ms: int,
     body: str = "",
+    access_token: str | None = None,
 ) -> str | None:
     """Create a HubSpot meeting and associate it with a contact."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{HUBSPOT_API}/crm/v3/objects/meetings",
-            headers=_headers(),
+            headers=_headers(access_token),
             json={
                 "properties": {
                     "hs_meeting_title": title,
@@ -174,7 +185,7 @@ async def create_meeting(
         if meeting_id and contact_id:
             await client.put(
                 f"{HUBSPOT_API}/crm/v4/objects/meetings/{meeting_id}/associations/contacts/{contact_id}",
-                headers=_headers(),
+                headers=_headers(access_token),
                 json=[{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 200}],
                 timeout=10,
             )
@@ -190,6 +201,7 @@ async def sync_call(
     summary: str = "",
     session_id: str = "",
     meeting_data: dict | None = None,
+    access_token: str | None = None,
 ) -> dict:
     """Full HubSpot sync: find/create contact + engagement note + optional meeting.
 
@@ -197,15 +209,19 @@ async def sync_call(
         meeting_data: If provided, creates a meeting. Expected keys:
             meeting_datetime (ISO 8601), meeting_duration_minutes (int),
             calendar_subject (str), calendar_notes (str), caller_name (str)
+        access_token: Per-tenant HubSpot token; falls back to the global env var.
 
     Returns {"contact_id": str, "note_id": str, "meeting_id": str} or empty dict.
     """
-    if not get_settings().hubspot_access_token:
+    token = access_token or get_settings().hubspot_access_token
+    if not token:
         return {}
 
     try:
-        contact = await search_contact(phone)
-        contact_id = contact["id"] if contact else await create_contact(phone, name, email)
+        contact = await search_contact(phone, token)
+        contact_id = (
+            contact["id"] if contact else await create_contact(phone, name, email, token)
+        )
 
         if not contact_id:
             return {}
@@ -217,7 +233,7 @@ async def sync_call(
             f"Session: {session_id}<br><br>"
             f"{summary}"
         )
-        note_id = await create_engagement_note(contact_id, note_body)
+        note_id = await create_engagement_note(contact_id, note_body, access_token=token)
 
         # Create meeting if requested
         meeting_id = None
@@ -239,7 +255,9 @@ async def sync_call(
                     f"Caller: {caller} ({phone})\n"
                     f"Session: {session_id}"
                 )
-                meeting_id = await create_meeting(contact_id, subject, start_ms, end_ms, body)
+                meeting_id = await create_meeting(
+                    contact_id, subject, start_ms, end_ms, body, access_token=token
+                )
             except Exception:
                 logger.exception("Failed to create HubSpot meeting")
 

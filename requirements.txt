@@ -13,3 +13,4 @@ pydantic-settings==2.9.1
 orjson==3.10.18
 python-multipart==0.0.20
 bcrypt==5.0.0
+tzdata==2026.1; sys_platform == "win32"

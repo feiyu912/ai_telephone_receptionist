@@ -128,7 +128,10 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
         db, tenant.tenant_id, "whatsapp_inbound", "whatsapp",
         phone=from_number, session_id=message_sid,
     )
-    await hubspot_sync(phone=from_number, summary=f"WhatsApp: {masked_body}")
+    await hubspot_sync(
+        phone=from_number, summary=f"WhatsApp: {masked_body}",
+        access_token=tenant.hubspot_access_token,
+    )
 
     return _twiml_reply(response_text)
 

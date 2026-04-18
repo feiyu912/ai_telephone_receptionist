@@ -16,12 +16,12 @@ Multi-tenant admin dashboard for the AI Telephone Receptionist voice receptionis
 
 ## Roles
 
-| Role | Login domain | What they see |
-|---|---|---|
-| **Admin** | `*@360dmmc.com` | All tenants + admin pages (System Health, All Tenants) + tenant switcher |
-| **Client** | Other emails | Scoped to their own tenant only — no switcher, limited settings |
+| Role | What they see |
+|---|---|
+| **Admin** | All tenants + admin pages (System Health, All Tenants) + tenant switcher |
+| **Client** | Scoped to their own tenant only — no switcher, limited settings |
 
-Auth currently uses hardcoded demo users in `src/lib/auth.tsx`. **Replace with Supabase Auth or similar before production launch.**
+Role is read from the `dashboard_users.role` column in Supabase (not inferred from email). Seed users via `scripts/seed_dashboard_users.py`. Passwords are bcrypt-hashed; login is rate-limited per IP and backed by HMAC-signed session cookies. Set `AUTH_SECRET` + `COOKIE_SECURE=true` in production.
 
 ## Pages
 

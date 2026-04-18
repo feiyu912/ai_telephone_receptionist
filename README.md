@@ -14,8 +14,8 @@
 | Voice AI — Starter | GPT-5-mini + Twilio Polly TTS (HTTP TwiML path, ~3-5s latency) |
 | Voice AI — Growth/Pro | **OpenAI Realtime (`gpt-realtime-mini`)** — STT + LLM + TTS in one, sub-second latency, built-in barge-in |
 | Function calling | OpenAI tools (6 functions) |
-| CRM | HubSpot (contact + engagement note + meeting auto-creation) |
-| Calendar + Email | Microsoft Graph (Outlook calendar booking + sender mailbox `ai-agent@your-domain.com`) |
+| CRM | HubSpot (contact + engagement note + meeting; per-tenant `hubspot_access_token` with a global env fallback) |
+| Calendar + Email | Microsoft Graph (per-tenant `calendar_email` / `sender_email` columns; falls back to the global `MS_CALENDAR_EMAIL` / `MS_SENDER_EMAIL` env vars when a tenant hasn't configured its own) |
 | Database | Supabase PostgreSQL (18 tables, 11 views, multi-tenant via `tenant_id`) |
 | Dashboard | Next.js 16 + React 19 + TailwindCSS + shadcn/ui |
 | Reverse proxy | Nginx (Docker, SSL via Let's Encrypt) |
@@ -73,19 +73,22 @@
 - **WhatsApp** — inbound WhatsApp with same compliance model
 
 ### Integrations
-- **HubSpot CRM** — contact search/create + engagement notes + meeting auto-creation
-- **Outlook Calendar** — appointment booking via Microsoft Graph (`Calendars.ReadWrite`)
-- **Outlook Email** — voicemail alerts, follow-up emails, booking confirmations (`Mail.Send` from `ai-agent@your-domain.com`)
-- **SMS follow-up** — post-call summary or booking link via Twilio
+- **HubSpot CRM** — contact search/create + engagement notes + meeting auto-creation. Per-tenant `hubspot_access_token`; falls back to the global env var.
+- **Outlook Calendar** — appointment booking via Microsoft Graph (`Calendars.ReadWrite`). Per-tenant `calendar_email` column; falls back to `MS_CALENDAR_EMAIL`.
+- **Outlook Email** — voicemail alerts, follow-up emails, booking confirmations (`Mail.Send`). Per-tenant `sender_email` column; falls back to `MS_SENDER_EMAIL`.
+- **SMS follow-up** — post-call summary or booking link via Twilio. Per-tenant `twilio_account_sid` / `twilio_auth_token`; falls back to global `TWILIO_*`.
 
 ### Multi-tenant Dashboard (`app.your-domain.com`)
 
-**Admin role** (`*@360dmmc.com`):
+Roles are stored on each user row in the `dashboard_users` Supabase table
+(`role = 'admin' | 'client'`), not inferred from email domain.
+
+**Admin role:**
 - All Tenants overview (aggregate stats)
 - System Health monitoring
 - Tenant switcher (browse/edit any tenant)
 
-**Client role** (other emails):
+**Client role:**
 - Scoped to their own tenant only
 - Manage greetings, system prompt, FAQ, voice
 - View their calls, customers, analytics

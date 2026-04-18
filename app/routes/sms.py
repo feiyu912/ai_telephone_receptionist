@@ -152,7 +152,10 @@ async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
     )
 
     # HubSpot sync (background)
-    await hubspot_sync(phone=from_number, summary=f"SMS: {masked_body}")
+    await hubspot_sync(
+        phone=from_number, summary=f"SMS: {masked_body}",
+        access_token=tenant.hubspot_access_token,
+    )
 
     # Cap SMS length to 320 chars (2 SMS segments)
     if len(response_text) > SMS_MAX_LENGTH:

@@ -1,4 +1,10 @@
-"""Twilio SMS service for sending follow-up messages and notifications."""
+"""Twilio SMS service for sending follow-up messages and notifications.
+
+Per-tenant credentials are optional — pass `account_sid` and
+`auth_token` to send via a specific Twilio (sub)account, otherwise
+the global TWILIO_* env vars are used. Clients are cached per
+(sid, token) pair so we don't rebuild a TLS connection every call.
+"""
 
 from __future__ import annotations
 import logging
@@ -7,21 +13,36 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_client: Client | None = None
+_clients: dict[tuple[str, str], Client] = {}
 
 
-def _get_client() -> Client:
-    global _client
-    if _client is None:
-        settings = get_settings()
-        _client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
-    return _client
+def _get_client(account_sid: str | None, auth_token: str | None) -> Client | None:
+    settings = get_settings()
+    sid = account_sid or settings.twilio_account_sid
+    token = auth_token or settings.twilio_auth_token
+    if not sid or not token:
+        return None
+    key = (sid, token)
+    client = _clients.get(key)
+    if client is None:
+        client = Client(sid, token)
+        _clients[key] = client
+    return client
 
 
-async def send_sms(to: str, from_: str, body: str) -> str | None:
+async def send_sms(
+    to: str,
+    from_: str,
+    body: str,
+    account_sid: str | None = None,
+    auth_token: str | None = None,
+) -> str | None:
     """Send an SMS via Twilio. Returns message SID or None on failure."""
+    client = _get_client(account_sid, auth_token)
+    if client is None:
+        logger.warning("send_sms skipped: no Twilio credentials configured")
+        return None
     try:
-        client = _get_client()
         message = client.messages.create(to=to, from_=from_, body=body)
         logger.info("SMS sent to %s: sid=%s", to, message.sid)
         return message.sid
@@ -33,6 +54,8 @@ async def send_sms(to: str, from_: str, body: str) -> str | None:
 async def send_booking_confirmation(
     to: str, from_: str, caller_name: str,
     date: str, time: str, company_name: str,
+    account_sid: str | None = None,
+    auth_token: str | None = None,
 ) -> str | None:
     """Send a booking confirmation SMS."""
     body = (
@@ -40,11 +63,13 @@ async def send_booking_confirmation(
         f"is confirmed for {date} at {time}. "
         f"Reply STOP to opt out of messages."
     )
-    return await send_sms(to, from_, body)
+    return await send_sms(to, from_, body, account_sid, auth_token)
 
 
 async def send_call_summary(
     to: str, from_: str, summary: str, company_name: str,
+    account_sid: str | None = None,
+    auth_token: str | None = None,
 ) -> str | None:
     """Send a post-call summary SMS."""
     body = (
@@ -52,4 +77,4 @@ async def send_call_summary(
         f"Here's a summary: {summary[:300]}\n\n"
         f"Reply STOP to opt out."
     )
-    return await send_sms(to, from_, body)
+    return await send_sms(to, from_, body, account_sid, auth_token)

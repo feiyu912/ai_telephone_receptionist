@@ -332,6 +332,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 phone=phone, name=facts.name, email=facts.email,
                 summary=masked_transcript[:500], session_id=call_sid,
                 meeting_data=meeting_data,
+                access_token=tenant.hubspot_access_token if tenant else None,
             )
 
             # SMS follow-up (skip browser callers, check opt-out)
@@ -353,12 +354,18 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         await send_call_summary(
                             phone, tenant.phone_number,
                             masked_transcript[:300], tenant.company_name or "",
+                            account_sid=tenant.twilio_account_sid,
+                            auth_token=tenant.twilio_auth_token,
                         )
                     elif sms_body:
                         # Cap at 320 chars
                         if len(sms_body) > 320:
                             sms_body = sms_body[:317] + "..."
-                        await send_sms(phone, tenant.phone_number, sms_body)
+                        await send_sms(
+                            phone, tenant.phone_number, sms_body,
+                            account_sid=tenant.twilio_account_sid,
+                            auth_token=tenant.twilio_auth_token,
+                        )
 
                     await queries.log_analytics_event(
                         db, tenant_id, "sms_followup_sent", "voice",
@@ -375,6 +382,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         caller_name=facts.name or "there",
                         summary=masked_transcript[:300],
                         company_name=tenant.company_name or "",
+                        sender_email=tenant.sender_email,
                     )
                 except Exception:
                     logger.debug("Email follow-up skipped (email not configured)")
@@ -390,6 +398,8 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         captured_email=facts.email,
                         session_id=call_sid,
                         company_name=tenant.company_name or "",
+                        twilio_account_sid=tenant.twilio_account_sid,
+                        twilio_auth_token=tenant.twilio_auth_token,
                     )
                 except Exception:
                     logger.exception("Email confirmation SMS failed for %s", call_sid)
@@ -406,6 +416,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     to_email=tenant.voicemail_email,
                     caller_phone=phone,
                     company_name=tenant.company_name or "",
+                    sender_email=tenant.sender_email,
                 )
         except Exception:
             logger.exception("Voicemail email failed for %s", call_sid)

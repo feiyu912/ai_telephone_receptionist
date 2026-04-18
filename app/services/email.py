@@ -3,7 +3,8 @@
 Replaces the old SMTP-based implementation. Uses the same Azure app
 credentials as Outlook Calendar, with the Mail.Send permission.
 
-Sender mailbox is configured via MS_SENDER_EMAIL.
+Sender mailbox is per-tenant (account_settings.sender_email) with a
+fallback to the global MS_SENDER_EMAIL env var.
 """
 
 from __future__ import annotations
@@ -59,10 +60,11 @@ async def send_voicemail_alert(
     recording_url: str | None = None,
     transcript: str | None = None,
     company_name: str = "",
+    sender_email: str | None = None,
 ) -> bool:
     """Notify the team that a voicemail was left."""
     settings = get_settings()
-    sender = settings.ms_sender_email
+    sender = sender_email or settings.ms_sender_email
     if not sender or not to_email:
         logger.info("Skipping voicemail email (sender or recipient missing)")
         return False
@@ -88,10 +90,11 @@ async def send_followup_email(
     caller_name: str,
     summary: str,
     company_name: str = "",
+    sender_email: str | None = None,
 ) -> bool:
     """Send post-call follow-up email to the caller."""
     settings = get_settings()
-    sender = settings.ms_sender_email
+    sender = sender_email or settings.ms_sender_email
     if not sender or not to_email:
         logger.info("Skipping follow-up email (sender or recipient missing)")
         return False
@@ -113,10 +116,11 @@ async def send_booking_confirmation(
     meeting_datetime: str,
     company_name: str = "",
     meeting_link: str = "",
+    sender_email: str | None = None,
 ) -> bool:
     """Send booking confirmation email to the caller."""
     settings = get_settings()
-    sender = settings.ms_sender_email
+    sender = sender_email or settings.ms_sender_email
     if not sender or not to_email:
         return False
 
