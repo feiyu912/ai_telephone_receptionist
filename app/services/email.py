@@ -23,9 +23,10 @@ async def _send_via_graph(
     to_email: str,
     subject: str,
     html_body: str,
+    tenant_id: str | None = None,
 ) -> bool:
     """Send an HTML email via Microsoft Graph as `sender`."""
-    token = await _get_access_token()
+    token = await _get_access_token(tenant_id)
     if not token:
         logger.info("Skipping email (Microsoft Graph not configured)")
         return False
@@ -61,6 +62,7 @@ async def send_voicemail_alert(
     transcript: str | None = None,
     company_name: str = "",
     sender_email: str | None = None,
+    tenant_id: str | None = None,
 ) -> bool:
     """Notify the team that a voicemail was left."""
     settings = get_settings()
@@ -82,7 +84,7 @@ async def send_voicemail_alert(
         body_parts.append(f"<p><strong>Transcript:</strong> {transcript}</p>")
     body_parts.append(f"<hr><p><em>POD6 AI Voice Agent — {company_name}</em></p>")
 
-    return await _send_via_graph(sender, to_email, subject, "".join(body_parts))
+    return await _send_via_graph(sender, to_email, subject, "".join(body_parts), tenant_id)
 
 
 async def send_followup_email(
@@ -91,6 +93,7 @@ async def send_followup_email(
     summary: str,
     company_name: str = "",
     sender_email: str | None = None,
+    tenant_id: str | None = None,
 ) -> bool:
     """Send post-call follow-up email to the caller."""
     settings = get_settings()
@@ -107,7 +110,7 @@ async def send_followup_email(
         f"<p>If you have any questions, just reply to this email or give us a call.</p>"
         f"<p>Best regards,<br>{company_name} Team</p>"
     )
-    return await _send_via_graph(sender, to_email, subject, body)
+    return await _send_via_graph(sender, to_email, subject, body, tenant_id)
 
 
 async def send_booking_confirmation(
@@ -117,6 +120,7 @@ async def send_booking_confirmation(
     company_name: str = "",
     meeting_link: str = "",
     sender_email: str | None = None,
+    tenant_id: str | None = None,
 ) -> bool:
     """Send booking confirmation email to the caller."""
     settings = get_settings()
@@ -134,4 +138,4 @@ async def send_booking_confirmation(
     body_parts.append("<p>We look forward to speaking with you!</p>")
     body_parts.append(f"<p>Best regards,<br>{company_name} Team</p>")
 
-    return await _send_via_graph(sender, to_email, subject, "".join(body_parts))
+    return await _send_via_graph(sender, to_email, subject, "".join(body_parts), tenant_id)

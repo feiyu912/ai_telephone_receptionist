@@ -9,12 +9,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { getTenantSettings, updateTenantSettings } from "@/lib/api";
+import { CheckCircle2, Loader2 } from "lucide-react";
+import { API_BASE, getOAuthStatus, getTenantSettings, updateTenantSettings } from "@/lib/api";
 import { useTenantId, useTenant } from "@/lib/tenant";
+
+interface OAuthStatus {
+  microsoft?: { connected: boolean; updated_at?: string };
+  hubspot?: { connected: boolean; updated_at?: string };
+}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
+  const [oauthStatus, setOauthStatus] = useState<OAuthStatus>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -24,11 +30,22 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!tenantId) return;
     setLoading(true);
-    getTenantSettings(tenantId)
-      .then(setSettings)
+    Promise.all([
+      getTenantSettings(tenantId),
+      getOAuthStatus(tenantId).catch(() => ({})),
+    ])
+      .then(([s, o]) => {
+        setSettings(s);
+        setOauthStatus(o);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [tenantId]);
+
+  const connectOutlook = () => {
+    if (!tenantId) return;
+    window.location.href = `${API_BASE}/oauth/microsoft/authorize/${tenantId}`;
+  };
 
   const update = (key: string, value: unknown) => {
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -255,6 +272,31 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-4 mt-4">
+          <Card className="p-6 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-medium flex items-center gap-2">
+                  Microsoft Outlook
+                  {oauthStatus.microsoft?.connected ? (
+                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      <CheckCircle2 className="w-3 h-3" /> Connected
+                    </span>
+                  ) : (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                      Not connected
+                    </span>
+                  )}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Connect your Microsoft 365 account so calendar bookings and emails come from <em>your</em> mailbox. Without connecting, we fall back to the shared platform mailbox.
+                </p>
+              </div>
+              <Button variant={oauthStatus.microsoft?.connected ? "outline" : "default"} onClick={connectOutlook}>
+                {oauthStatus.microsoft?.connected ? "Reconnect" : "Connect Outlook"}
+              </Button>
+            </div>
+          </Card>
+
           <Card className="p-6 space-y-4">
             <div>
               <h3 className="font-medium">Outlook mailbox</h3>

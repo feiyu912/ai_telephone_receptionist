@@ -11,6 +11,8 @@ Tokens are stored encrypted in the tenant_credentials table.
 from __future__ import annotations
 import json
 import logging
+import time
+from urllib.parse import quote
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 import httpx
@@ -92,6 +94,9 @@ async def hubspot_callback(
 
 # ── Microsoft OAuth (Outlook Calendar) ─────────────────────────────
 
+MS_SCOPES = "Mail.Send Calendars.ReadWrite offline_access User.Read"
+
+
 @router.get("/microsoft/authorize/{tenant_id}")
 async def microsoft_authorize(
     tenant_id: str,
@@ -105,8 +110,9 @@ async def microsoft_authorize(
         f"?client_id={settings.ms_client_id}"
         f"&response_type=code"
         f"&redirect_uri={settings.base_url}/oauth/microsoft/callback"
-        f"&scope=Calendars.ReadWrite%20offline_access"
+        f"&scope={quote(MS_SCOPES, safe='')}"
         f"&state={state}"
+        f"&prompt=consent"
     )
     return RedirectResponse(url)
 
@@ -136,7 +142,7 @@ async def microsoft_callback(
                 "client_secret": settings.ms_client_secret,
                 "redirect_uri": f"{settings.base_url}/oauth/microsoft/callback",
                 "code": code,
-                "scope": "Calendars.ReadWrite offline_access",
+                "scope": MS_SCOPES,
             },
         )
 
@@ -148,10 +154,13 @@ async def microsoft_callback(
         return JSONResponse({"error": "Token exchange failed"}, status_code=400)
 
     tokens = resp.json()
+    expires_in = int(tokens.get("expires_in") or 3600)
+    expires_at = int(time.time()) + expires_in
     await _save_credential(db, tenant_id, "microsoft", {
         "access_token": tokens.get("access_token"),
         "refresh_token": tokens.get("refresh_token"),
-        "expires_in": tokens.get("expires_in"),
+        "expires_in": expires_in,
+        "expires_at": expires_at,
     })
 
     return JSONResponse({"status": "connected", "service": "microsoft", "tenant_id": tenant_id})

@@ -6,16 +6,22 @@ loose AM/PM time parsing, and proper timezone-aware slot checking.
 """
 
 from __future__ import annotations
+import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta, date as date_cls
 from zoneinfo import ZoneInfo
 import httpx
+from sqlalchemy import text
 from app.config import get_settings
+from app.db.client import get_session_factory
 
 logger = logging.getLogger(__name__)
 
 GRAPH_API = "https://graph.microsoft.com/v1.0"
+# Refresh the tenant access token if less than this many seconds remain.
+_TOKEN_REFRESH_BUFFER = 120
 
 # Weekday name → Python weekday() number (Mon=0 ... Sun=6)
 _WEEKDAYS = {
@@ -31,8 +37,10 @@ _WEEKDAYS = {
 
 # ── Auth ───────────────────────────────────────────────────────────
 
-async def _get_access_token() -> str | None:
-    """Client-credentials OAuth token for Microsoft Graph."""
+async def _service_principal_token() -> str | None:
+    """Client-credentials OAuth token for Microsoft Graph — uses the
+    platform's shared Azure app. This is the fallback when a tenant
+    hasn't connected its own Outlook via OAuth."""
     settings = get_settings()
     if not settings.ms_tenant_id or not settings.ms_client_id:
         return None
@@ -50,8 +58,90 @@ async def _get_access_token() -> str | None:
         )
         if resp.status_code == 200:
             return resp.json().get("access_token")
-        logger.error("Failed to get Graph token: %s", resp.text[:300])
+        logger.error("Failed to get Graph service-principal token: %s", resp.text[:300])
         return None
+
+
+async def _refresh_tenant_token(refresh_token: str) -> dict | None:
+    """Swap a tenant's refresh token for a new access + refresh token pair."""
+    settings = get_settings()
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": settings.ms_client_id,
+                "client_secret": settings.ms_client_secret,
+                "scope": "Mail.Send Calendars.ReadWrite offline_access User.Read",
+            },
+            timeout=10,
+        )
+    if resp.status_code != 200:
+        logger.warning("Graph refresh-token exchange failed: %s", resp.text[:300])
+        return None
+    return resp.json()
+
+
+async def _load_tenant_microsoft_creds(tenant_id: str) -> dict | None:
+    factory = get_session_factory()
+    async with factory() as db:
+        row = await db.execute(
+            text(
+                "SELECT credentials FROM tenant_credentials "
+                "WHERE tenant_id = :tid AND service = 'microsoft'"
+            ),
+            {"tid": tenant_id},
+        )
+        return row.scalar()
+
+
+async def _save_tenant_microsoft_creds(tenant_id: str, creds: dict) -> None:
+    factory = get_session_factory()
+    async with factory() as db:
+        await db.execute(
+            text(
+                "UPDATE tenant_credentials "
+                "SET credentials = CAST(:c AS jsonb), updated_at = NOW() "
+                "WHERE tenant_id = :tid AND service = 'microsoft'"
+            ),
+            {"tid": tenant_id, "c": json.dumps(creds)},
+        )
+        await db.commit()
+
+
+async def _get_access_token(tenant_id: str | None = None) -> str | None:
+    """Graph access token for the given tenant, or the platform-level
+    service-principal token when tenant_id is None or the tenant hasn't
+    connected Outlook yet.
+
+    Uses the tenant's stored refresh token to mint a fresh access token
+    if the cached one is within _TOKEN_REFRESH_BUFFER of expiring, and
+    rotates the refresh_token when Microsoft returns a new one.
+    """
+    if tenant_id:
+        creds = await _load_tenant_microsoft_creds(tenant_id)
+        if creds and creds.get("refresh_token"):
+            expires_at = int(creds.get("expires_at") or 0)
+            if creds.get("access_token") and expires_at - int(time.time()) > _TOKEN_REFRESH_BUFFER:
+                return creds["access_token"]
+            new_tokens = await _refresh_tenant_token(creds["refresh_token"])
+            if new_tokens and new_tokens.get("access_token"):
+                expires_in = int(new_tokens.get("expires_in") or 3600)
+                await _save_tenant_microsoft_creds(tenant_id, {
+                    "access_token": new_tokens["access_token"],
+                    # Microsoft rotates refresh tokens on each exchange; keep
+                    # the old one only if a new one wasn't returned.
+                    "refresh_token": new_tokens.get("refresh_token") or creds["refresh_token"],
+                    "expires_in": expires_in,
+                    "expires_at": int(time.time()) + expires_in,
+                })
+                return new_tokens["access_token"]
+            logger.warning(
+                "Tenant %s Outlook refresh failed — falling back to service principal",
+                tenant_id,
+            )
+    return await _service_principal_token()
 
 
 # ── Date & time parsing (from n8n to24h + natural language extensions) ─
@@ -202,16 +292,19 @@ async def check_availability(
     buffer_minutes: int = 15,
     business_hours_start: int = 9,
     business_hours_end: int = 17,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     """Return available time slots for a date.
 
     Args:
         date_iso: 'YYYY-MM-DD' (already parsed — use parse_natural_date() first).
+        tenant_id: if set, tries the tenant's own Graph token before
+            falling back to the platform service principal.
 
     Returns:
         [{"start": "2026-04-20T14:00:00-05:00", "end": "...", "label": "2 PM", "hour": 14, "minute": 0}, ...]
     """
-    token = await _get_access_token()
+    token = await _get_access_token(tenant_id)
     if not token:
         logger.warning("No Graph token — calendar not configured")
         return []
@@ -292,9 +385,10 @@ async def create_event(
     attendee_email: str | None = None,
     attendee_name: str | None = None,
     notes: str = "",
+    tenant_id: str | None = None,
 ) -> dict | None:
     """Create a calendar event. `start_iso`/`end_iso` include the timezone offset."""
-    token = await _get_access_token()
+    token = await _get_access_token(tenant_id)
     if not token:
         return None
 
@@ -341,6 +435,7 @@ async def book_appointment(
     duration_minutes: int = 60,
     business_hours_start: int = 9,
     business_hours_end: int = 17,
+    tenant_id: str | None = None,
 ) -> dict:
     """Full booking flow: parse inputs, check availability, create event.
 
@@ -368,6 +463,7 @@ async def book_appointment(
         calendar_email, date_iso, timezone,
         duration_minutes, 15,
         business_hours_start, business_hours_end,
+        tenant_id=tenant_id,
     )
     if not slots:
         return {
@@ -423,6 +519,7 @@ async def book_appointment(
             f"Phone: {caller_phone}\n"
             f"Purpose: {purpose}"
         ),
+        tenant_id=tenant_id,
     )
 
     if not event:

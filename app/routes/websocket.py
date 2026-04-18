@@ -344,6 +344,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             duration_minutes=tenant.booking_duration_minutes,
                             business_hours_start=tenant.business_hours_start,
                             business_hours_end=tenant.business_hours_end,
+                            tenant_id=tenant.tenant_id,
                         )
                         if result.get("success"):
                             return f"Appointment booked for {result['slot']}. Confirm with the caller."

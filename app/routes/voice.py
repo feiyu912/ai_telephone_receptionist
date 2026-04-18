@@ -383,6 +383,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         summary=masked_transcript[:300],
                         company_name=tenant.company_name or "",
                         sender_email=tenant.sender_email,
+                        tenant_id=tenant.tenant_id,
                     )
                 except Exception:
                     logger.debug("Email follow-up skipped (email not configured)")
@@ -417,6 +418,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     caller_phone=phone,
                     company_name=tenant.company_name or "",
                     sender_email=tenant.sender_email,
+                    tenant_id=tenant.tenant_id,
                 )
         except Exception:
             logger.exception("Voicemail email failed for %s", call_sid)
