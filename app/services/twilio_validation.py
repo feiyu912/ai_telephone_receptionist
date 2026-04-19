@@ -90,11 +90,21 @@ async def verify_twilio_signature(request: Request) -> None:
 
     validator = RequestValidator(auth_token)
     if not validator.validate(_canonical_url(request), params, signature):
+        # Log enough to tell apart real-but-mismatched-token vs random probe:
+        # - CallSid / MessageSid only appear in genuine Twilio payloads
+        # - X-Forwarded-For reveals the *real* client IP behind nginx
+        fwd = request.headers.get("x-forwarded-for", "")
+        client_ip = fwd.split(",", 1)[0].strip() if fwd else (
+            request.client.host if request.client else "unknown"
+        )
+        looks_like_twilio = bool(params.get("CallSid") or params.get("MessageSid") or params.get("AccountSid"))
         logger.warning(
-            "Invalid Twilio signature on %s (from %s, tenant_token=%s)",
+            "Invalid Twilio signature on %s (client=%s, tenant_token=%s, looks_like_twilio=%s, params=%s)",
             request.url.path,
-            request.client.host if request.client else "unknown",
+            client_ip,
             "yes" if tenant_token else "fallback",
+            looks_like_twilio,
+            sorted(params.keys()),
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

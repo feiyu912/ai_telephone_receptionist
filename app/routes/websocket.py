@@ -185,7 +185,11 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     response = json.loads(openai_message)
                     event_type = response.get("type", "")
 
-                    if event_type in LOG_EVENT_TYPES:
+                    if event_type == "error":
+                        # Surface the full error body so we can see *why* OpenAI bailed
+                        # (bad model name, scope mismatch, rate limit, etc.)
+                        logger.error("OpenAI error event: %s", response)
+                    elif event_type in LOG_EVENT_TYPES:
                         logger.info("OpenAI: %s", event_type)
 
                     # Forward audio to Twilio
