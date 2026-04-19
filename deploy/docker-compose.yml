@@ -1,6 +1,4 @@
-version: "3.9"
-
-# POD6 Voice Agent — Docker Compose for Hostinger VPS
+# AI Telephone Receptionist — Docker Compose for Hostinger VPS
 #
 # Services:
 #   api       — FastAPI voice agent (Python) on port 8000
