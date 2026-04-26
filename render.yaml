@@ -1,15 +1,35 @@
+# AI Telephone Receptionist — Render staging blueprint
+#
+# Use this for a quick staging environment that mirrors prod but is
+# safe to break. After deploying:
+#   1. Set the env vars below in the Render dashboard (sync: false means
+#      Render won't auto-fill them — you paste real values once)
+#   2. Note the Render URL (e.g. voz-alta-staging.onrender.com)
+#   3. Set BASE_URL to that URL
+#   4. Point a *separate* Twilio test number's webhook at it
+#   5. Use a *separate* OpenAI key with a low monthly cap
+
 services:
   - type: web
-    name: pod6-voice-agent
+    name: voz-alta-staging
     runtime: docker
     dockerfilePath: ./Dockerfile
+    plan: starter   # keep warm; free tier sleeps after 15min and Twilio times out
+    healthCheckPath: /health
     envVars:
+      # --- Supabase / PostgreSQL (can share with prod or use a staging branch) ---
       - key: DATABASE_URL
         sync: false
+
+      # --- OpenAI (use a SEPARATE key with a low monthly limit for staging) ---
       - key: OPENAI_API_KEY
         sync: false
+
+      # --- Cartesia (optional fallback STT/TTS) ---
       - key: CARTESIA_API_KEY
         sync: false
+
+      # --- Twilio (use a SEPARATE test number; same account or subaccount) ---
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
@@ -20,8 +40,39 @@ services:
         sync: false
       - key: TWILIO_TWIML_APP_SID
         sync: false
-      - key: BASE_URL
+
+      # --- Microsoft Graph (Outlook calendar + email) ---
+      - key: MS_TENANT_ID
         sync: false
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: MS_CALENDAR_EMAIL
+        sync: false
+      - key: MS_SENDER_EMAIL
+        sync: false
+
+      # --- HubSpot (platform fallback) ---
+      - key: HUBSPOT_ACCESS_TOKEN
+        sync: false
+
+      # --- Server ---
+      - key: BASE_URL
+        sync: false              # set to your Render URL, e.g. https://voz-alta-staging.onrender.com
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "8000"
       - key: LOG_LEVEL
         value: info
-    healthCheckPath: /health
+
+      # --- Dashboard auth (required even if you only test the API) ---
+      - key: AUTH_SECRET
+        sync: false              # generate: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DASHBOARD_URL
+        sync: false              # set to wherever you'll run the dashboard, or leave empty for API-only testing
+      - key: CORS_ORIGINS
+        sync: false              # e.g. https://voz-alta-staging-dashboard.onrender.com,http://localhost:3000
