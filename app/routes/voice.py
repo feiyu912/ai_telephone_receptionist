@@ -503,6 +503,23 @@ def _websocket_route(
     )
 
 
+@router.post("/transfer/{call_sid}")
+async def transfer_endpoint(
+    call_sid: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """TwiML returned by Twilio when a Realtime/WS-tier call is redirected
+    here mid-call by transfer_to_human. Looks the call up by call_sid so we
+    can pull the tenant's hunt group + voice."""
+    session_data = await queries.get_voice_session(db, call_sid)
+    if not session_data:
+        return _twiml_response("<Response><Hangup/></Response>")
+    tenant = await queries.get_tenant_by_id(db, str(session_data["tenant_id"]))
+    if not tenant:
+        return _twiml_response("<Response><Hangup/></Response>")
+    return _build_transfer_twiml(tenant, "Connecting you now.")
+
+
 def _build_transfer_twiml(tenant: TenantConfig, hold_message: str) -> Response:
     """Build TwiML for hunt group transfer with sequential dial."""
     if not tenant.hunt_group_numbers:

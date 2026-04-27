@@ -336,7 +336,30 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                     return "Call ending. Say the farewell now, then I will hang up."
                 elif name == "transfer_to_human":
                     await queries.log_analytics_event(db, tid, "transfer_requested", "voice", phone=caller_phone, session_id=call_sid)
-                    return "Transferring."
+                    # Realtime WS owns the call audio — to actually transfer
+                    # we have to hand the call back to Twilio and redirect it
+                    # to TwiML that <Dial>s the hunt group. Do that via the
+                    # Twilio REST API with the tenant's own credentials.
+                    if not tenant.hunt_group_numbers:
+                        return "No hunt group configured. Tell the caller no one is available right now."
+                    try:
+                        from twilio.rest import Client as TwilioRestClient
+                        from app.config import get_settings as _gs
+                        s = _gs()
+                        sid   = tenant.twilio_account_sid or s.twilio_account_sid
+                        tok   = tenant.twilio_auth_token  or s.twilio_auth_token
+                        base  = s.base_url.rstrip("/")
+                        TwilioRestClient(sid, tok).calls(call_sid).update(
+                            method="POST",
+                            url=f"{base}/voice/transfer/{call_sid}",
+                        )
+                        # The redirect closes the media stream from Twilio's
+                        # side; mark the session so post-call processing knows.
+                        await queries.update_voice_session(db, call_sid, status="transferred")
+                        return "Hand-off triggered. Tell the caller to hold while we connect."
+                    except Exception:
+                        logger.exception("Live-transfer redirect failed for %s", call_sid)
+                        return "Transfer failed. Tell the caller you couldn't reach a teammate and offer to take a message."
                 elif name == "book_appointment":
                     await queries.update_voice_session(db, call_sid, booking_context={"requested": True, "details": args})
                     # Try to book via Outlook Calendar (per-tenant mailbox + timezone, fall back to global env)
