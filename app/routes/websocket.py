@@ -135,7 +135,15 @@ async def media_stream(websocket: WebSocket, call_sid: str):
         await openai_ws.send(json.dumps({
             "type": "session.update",
             "session": {
-                "turn_detection": {"type": "server_vad"},
+                # VAD tuned for telephony where echo from speakers can leak
+                # back into the mic. threshold higher than default 0.5 +
+                # longer silence_duration_ms reduce echo-triggered barge-ins.
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.65,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                },
                 "input_audio_format": "g711_ulaw",
                 "output_audio_format": "g711_ulaw",
                 "input_audio_transcription": {"model": "whisper-1"},
