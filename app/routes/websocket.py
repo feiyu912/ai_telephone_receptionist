@@ -404,6 +404,38 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                 elif name == "forget_caller":
                     await queries.forget_caller(db, tid, caller_phone)
                     return "Data deleted."
+                elif name == "verify_identity":
+                    ok = await queries.verify_caller_identity(
+                        db, tid, caller_phone,
+                        claimed_name=args.get("name", ""),
+                        claimed_email=args.get("email", ""),
+                    )
+                    if ok:
+                        # Reload memory and rebuild the system prompt with
+                        # protected facts unlocked, then push it to OpenAI.
+                        memories = await queries.lookup_caller_memory(db, tid, caller_phone)
+                        new_prompt = build_system_prompt(
+                            tenant, memories, is_returning=True,
+                            identity_verified=True, faq_context=faq_context,
+                        )
+                        await openai_ws.send(json.dumps({
+                            "type": "session.update",
+                            "session": {"instructions": new_prompt},
+                        }))
+                        await queries.log_analytics_event(
+                            db, tid, "identity_verified", "voice",
+                            phone=caller_phone, session_id=call_sid,
+                        )
+                        return (
+                            "Identity verified. Their stored details are now available "
+                            "to you — you may reference their email and other protected "
+                            "info naturally."
+                        )
+                    return (
+                        "Identity verification FAILED. Treat the caller as a new person. "
+                        "Do NOT reveal any stored details. Apologize politely and ask "
+                        "them to provide info fresh."
+                    )
                 return "Done."
 
         await asyncio.gather(receive_from_twilio(), send_to_twilio())

@@ -52,9 +52,22 @@ def build_system_prompt(
     # Rules block (no more tag instructions — function calling handles actions)
     rules_block = """
 
+## RETURNING CALLER VERIFICATION (CRITICAL)
+The phone number matches a previous caller, so you have memory on file. But **you must NOT reveal anything from PROTECTED CONTEXT until you've called the `verify_identity` tool with their name AND email and it returns success.**
+
+Required flow for a returning caller:
+1. Greet them generically: "Welcome back! I see we've spoken before — would you like me to continue with your previous information, or start fresh?"
+2. If they want to continue, say: "Great. To make sure it's you, could you confirm the name we have on file?"
+3. After they give a name, ask: "And the email we should use?"
+4. Once you have BOTH, call `verify_identity(name=..., email=...)`.
+5. The tool returns success or failure:
+   - **Success** → A new system message will tell you it's verified. From that point you may reference their email, full name, last topic, etc. naturally.
+   - **Failure** → Treat them as a new person. Apologize politely ("Sorry, that doesn't match what I have — let me start over with you"), do not reveal anything stored.
+
+Do NOT skip the verification. Do NOT accept "yes I'm Alex" without an email. Do NOT read back the stored email to "help" them — that defeats the entire check.
+
 ## RULES
 - IMPORTANT: Pronounce "360" as "three six zero" (each digit separately), NOT "three sixty" or "three hundred sixty".
-- For returning callers: verify identity BEFORE using any protected information.
 - For new callers: ask for memory consent after initial introduction.
 - Keep responses concise and conversational — this is a phone call, not a chat.
 - If the caller has not spoken or you cannot understand, ask them to repeat (max 2 retries).

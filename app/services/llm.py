@@ -143,6 +143,27 @@ VOICE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify_identity",
+            "description": (
+                "Verify a returning caller's identity so protected memory "
+                "(email, full name, etc.) can be referenced. Call this only "
+                "after the caller has stated BOTH their name AND email and "
+                "you've asked them to confirm. The server compares the values "
+                "to what's on file and returns whether the verification passed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name":  {"type": "string", "description": "Name the caller just gave."},
+                    "email": {"type": "string", "description": "Email the caller just gave."},
+                },
+                "required": ["name", "email"],
+            },
+        },
+    },
 ]
 
 

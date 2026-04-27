@@ -112,6 +112,37 @@ async def save_caller_memory(
     await db.commit()
 
 
+async def verify_caller_identity(
+    db: AsyncSession,
+    tenant_id: str,
+    phone: str,
+    claimed_name: str,
+    claimed_email: str,
+) -> bool:
+    """Return True iff the stored 'name' and 'email' memory entries for this
+    caller both match what the caller just said. Both are case-insensitive
+    and trimmed; name allows partial match (claimed substring of stored or
+    vice versa) since callers often give first name only."""
+    result = await db.execute(
+        text(
+            "SELECT memory_key, memory_value FROM caller_memory "
+            "WHERE tenant_id = :tid AND caller_phone = :phone "
+            "AND memory_key IN ('name', 'email')"
+        ),
+        {"tid": tenant_id, "phone": phone},
+    )
+    stored = {r["memory_key"]: (r["memory_value"] or "").strip().lower()
+              for r in result.mappings().all()}
+    if "name" not in stored or "email" not in stored:
+        return False
+
+    n = (claimed_name or "").strip().lower()
+    e = (claimed_email or "").strip().lower()
+    name_ok = bool(n) and (n in stored["name"] or stored["name"] in n)
+    email_ok = bool(e) and e == stored["email"]
+    return name_ok and email_ok
+
+
 async def forget_caller(db: AsyncSession, tenant_id: str, phone: str) -> None:
     """GDPR right-to-be-forgotten: flag consent + delete all memory."""
     await db.execute(

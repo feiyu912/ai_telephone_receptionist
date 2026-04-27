@@ -59,8 +59,10 @@
 - **Sub-second latency (Growth/Pro)** — OpenAI Realtime handles STT + LLM + TTS in one connection
 - **Barge-in** — caller can interrupt mid-sentence (built into Realtime API)
 - **Caller memory** — long-term facts with privacy tiers (safe/protected) + 90-day expiry + GDPR forget-me
+- **Identity verification** — protected memory (email, full name, etc.) is locked behind a `verify_identity` tool that requires the caller to confirm BOTH name AND email; only on success does the AI get to reference stored details
 - **FAQ matching** — Dice bigram similarity + FAQ context injected into Realtime system prompt
-- **Function calling** — 6 tools: `end_call`, `transfer_to_human`, `book_appointment`, `save_caller_memory`, `set_memory_consent`, `forget_caller`
+- **Function calling** — 7 tools: `end_call`, `transfer_to_human`, `book_appointment`, `save_caller_memory`, `set_memory_consent`, `forget_caller`, `verify_identity`
+- **Live transfer** — Growth/Pro calls hand off via Twilio REST API redirect to a hunt-group `<Dial>` TwiML; Starter calls return the TwiML inline
 - **End call hangup** — when AI calls `end_call`, the call automatically terminates after the farewell
 - **Email captured during calls** — confirmation SMS sent post-call so caller can correct typos
 - **Post-call processing** — GPT fact extraction → customer upsert → HubSpot sync → optional SMS/email follow-up
@@ -188,7 +190,8 @@ Roles are stored on each user row in the `dashboard_users` Supabase table
 | `analytics_events` | Every call/SMS/booking/sync event |
 | `bookings` | Appointment records linked to call sessions |
 | `opt_outs` | TCPA SMS/WhatsApp opt-out tracking |
-| `tenant_credentials` | Reserved for per-tenant OAuth (currently shared via env) |
+| `tenant_credentials` | Per-tenant OAuth refresh tokens (Microsoft / HubSpot) — populated when a tenant clicks Connect Outlook in the dashboard |
+| `dashboard_users` | Dashboard logins (email PK, bcrypt password_hash, role, tenant_id) |
 | `voice_config` | TTS voice catalog for `/voice/preview` |
 | `faq_entries` | FAQ knowledge base (152 total: 121 for YourCompany, 31 for Aplus) |
 
@@ -258,6 +261,33 @@ npm run dev
 # → http://localhost:3000
 ```
 
+## Environments
+
+| Environment | Where | Purpose |
+|---|---|---|
+| **Production** | Hostinger VPS at `api.your-domain.com` (Docker compose: api + dashboard + nginx + certbot) | Real customer calls to +1-555-0100 (YourCompany) and +1-555-0101 (Aplus) |
+| **Staging** | Render at `ai-voice-receptionist-36vr.onrender.com` (auto-deploys on push to `main`, blueprint in `render.yaml`) | Browser-test calls via TwiML App `APb3b9320…`; safe for daily QA |
+
+Real customer phone numbers route through Phone Number webhooks (prod). Browser test calls route through the TwiML App's Voice URL (staging). The two paths share the same Supabase but never collide.
+
+## Multi-tenant credential model
+
+Every per-tenant credential lives in Supabase `account_settings`, **not** in `.env`:
+
+- Twilio (Account SID / Auth Token / API Key SID / API Key Secret / TwiML App SID) — used for signature validation, outbound SMS, browser Voice SDK tokens
+- HubSpot (`hubspot_access_token`)
+- Microsoft Graph (`sender_email` + `calendar_email` for what mailbox / calendar to use; `tenant_credentials` row holds the OAuth refresh token after a tenant clicks Connect Outlook)
+- Hunt group numbers (`hunt_group_numbers` jsonb)
+
+`.env` only holds platform-level identity:
+
+- `DATABASE_URL` (bootstrap)
+- `OPENAI_API_KEY`, `CARTESIA_API_KEY`
+- `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT_ID` (your Azure App publisher identity — every tenant OAuths through the same app)
+- `AUTH_SECRET`, `COOKIE_SECURE`, `BASE_URL`, `DASHBOARD_URL`, `CORS_ORIGINS`, `HOST`, `PORT`, `LOG_LEVEL`
+
+When a per-tenant column is NULL, the service falls back to the matching env var. Once all tenants populate their own values, the env-level Twilio / HubSpot / MS-mailbox vars can be deleted entirely.
+
 ## Production Deployment
 
 The VPS deployment lives in `deploy/` and is managed by Docker Compose. Push to `main` and pull on the VPS to update.
@@ -269,6 +299,12 @@ git pull
 cd deploy
 docker compose up -d --build
 ```
+
+For first-time setup, use `deploy/install.sh` — it's idempotent and handles UFW, port conflicts, Let's Encrypt certificate issuance, and the cert-renewal cron.
+
+## Testing
+
+The QA test plan lives at [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md). It covers every MVP feature with explicit caller scripts, expected logs, and where to verify in Supabase / Outlook / HubSpot.
 
 For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 

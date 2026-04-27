@@ -34,6 +34,7 @@ Role is read from the `dashboard_users.role` column in Supabase (not inferred fr
 | `/faq` | Both | FAQ CRUD |
 | `/settings` | Both | Tenant config (admin sees more fields like `tier`) |
 | `/integrations` | Both | Live OAuth status (HubSpot, Microsoft Graph, Twilio, OpenAI) |
+| `/settings` (Integrations tab) | Both | Per-tenant credentials: Outlook mailbox, Twilio (SID + Auth Token + API Key + TwiML App), HubSpot token. Secret fields render as `••••` once saved and are server-redacted on GET. |
 | `/tenants` | Admin only | All Tenants overview with aggregate stats |
 | `/system` | Admin only | System Health (API, DB, Twilio, OpenAI) |
 
