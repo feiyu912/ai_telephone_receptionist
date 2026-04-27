@@ -1,14 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Card } from "@/components/ui/card";
+import { Search } from "lucide-react";
 import { ErrorCard } from "@/components/dashboard/error-card";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Filter, Loader2 } from "lucide-react";
+import { PageSpinner, PanelCard } from "@/components/dashboard/loading";
 import { getCustomers } from "@/lib/api";
 import { useTenantId } from "@/lib/tenant";
 
@@ -35,11 +30,20 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+function initials(name: string): string {
+  if (!name || name === "Guest") return "?";
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-
   const tenantId = useTenantId();
 
   const load = useCallback(() => {
@@ -51,80 +55,80 @@ export default function CustomersPage() {
       .catch((e: Error) => setError(e.message || "Request failed"));
   }, [tenantId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(load, [load]);
 
   if (error) return <ErrorCard message={error} onRetry={load} />;
-
-  if (!customers) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (!customers) return <PageSpinner />;
 
   const filtered = customers.filter(
     (c) =>
       !search ||
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.phone.includes(search) ||
-      (c.email || "").toLowerCase().includes(search.toLowerCase())
+      (c.email || "").toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Customers</h1>
-
-      <Card className="p-0">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded hover:bg-muted"><Filter className="w-4 h-4" /></button>
-          </div>
-          <Input
-            placeholder="Search customers..."
-            className="w-56 h-8"
+    <PanelCard
+      title={`${customers.length} customers`}
+      action={
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-dark-5 dark:text-dark-6" />
+          <input
+            type="search"
+            placeholder="Search customers…"
+            className="w-56 rounded-lg border border-stroke bg-gray-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-2"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Customer</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Last Activity</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      }
+      className="overflow-hidden"
+    >
+      <div className="-mx-6 -my-6 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-2 text-xs uppercase tracking-wider text-dark-5 dark:bg-dark-2 dark:text-dark-6">
+            <tr>
+              <th className="px-6 py-3 font-medium">Customer</th>
+              <th className="px-6 py-3 font-medium">Phone</th>
+              <th className="px-6 py-3 font-medium">Email</th>
+              <th className="px-6 py-3 font-medium">Last Activity</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stroke dark:divide-stroke-dark">
             {filtered.map((c) => (
-              <TableRow key={c.customer_id} className="cursor-pointer hover:bg-muted/50">
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Avatar className="w-8 h-8">
-                      <AvatarFallback className="text-xs">
-                        {c.name === "Guest" ? "?" : c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">{c.name}</span>
+              <tr
+                key={c.customer_id}
+                className="cursor-pointer transition-colors hover:bg-gray-2/60 dark:hover:bg-dark-2/60"
+              >
+                <td className="px-6 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      {initials(c.name)}
+                    </span>
+                    <span className="font-medium text-dark dark:text-white">
+                      {c.name}
+                    </span>
                   </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{c.phone}</TableCell>
-                <TableCell className="text-muted-foreground">{c.email || "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{timeAgo(c.updated_at)}</TableCell>
-              </TableRow>
+                </td>
+                <td className="px-6 py-3 text-dark-5 dark:text-dark-6">{c.phone}</td>
+                <td className="px-6 py-3 text-dark-5 dark:text-dark-6">{c.email || "—"}</td>
+                <td className="px-6 py-3 text-dark-5 dark:text-dark-6">
+                  {timeAgo(c.updated_at)}
+                </td>
+              </tr>
             ))}
             {filtered.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-dark-5 dark:text-dark-6">
                   No customers found
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             )}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
+          </tbody>
+        </table>
+      </div>
+    </PanelCard>
   );
 }

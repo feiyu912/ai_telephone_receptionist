@@ -1,16 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Phone, Search } from "lucide-react";
 import { ErrorCard } from "@/components/dashboard/error-card";
-import { Input } from "@/components/ui/input";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Phone, Filter, Loader2 } from "lucide-react";
+import { PageSpinner, PanelCard } from "@/components/dashboard/loading";
 import { getCalls } from "@/lib/api";
 import { useTenantId } from "@/lib/tenant";
+import { cn } from "@/lib/utils";
 
 interface Call {
   call_sid: string;
@@ -22,11 +18,11 @@ interface Call {
   last_activity_at: string;
 }
 
-const statusColors: Record<string, string> = {
-  active: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  closed: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  voicemail: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-  transferred: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+const STATUS_STYLES: Record<string, string> = {
+  active: "bg-green-light-7 text-green",
+  closed: "bg-blue-light-5 text-blue",
+  voicemail: "bg-yellow-light-4 text-yellow-dark",
+  transferred: "bg-primary/10 text-primary",
 };
 
 function timeAgo(dateStr: string): string {
@@ -44,7 +40,6 @@ export default function CallHistoryPage() {
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-
   const tenantId = useTenantId();
 
   const load = useCallback(() => {
@@ -56,81 +51,91 @@ export default function CallHistoryPage() {
       .catch((e: Error) => setError(e.message || "Request failed"));
   }, [tenantId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(load, [load]);
 
   if (error) return <ErrorCard message={error} onRetry={load} />;
-
-  if (!calls) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (!calls) return <PageSpinner />;
 
   const filtered = calls.filter(
     (c) =>
       !search ||
       c.caller_phone.includes(search) ||
-      c.call_sid.includes(search)
+      c.call_sid.includes(search),
   );
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Call History</h1>
-
-      <Card className="p-0">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded hover:bg-muted"><Filter className="w-4 h-4" /></button>
-          </div>
-          <Input
-            placeholder="Search calls..."
-            className="w-56 h-8"
+    <PanelCard
+      title={`${calls.length} calls`}
+      action={
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-dark-5 dark:text-dark-6" />
+          <input
+            type="search"
+            placeholder="Search calls…"
+            className="w-56 rounded-lg border border-stroke bg-gray-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-2"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Call SID</TableHead>
-              <TableHead>Caller</TableHead>
-              <TableHead>Tier</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      }
+      className="overflow-hidden"
+    >
+      <div className="-mx-6 -my-6 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-2 text-xs uppercase tracking-wider text-dark-5 dark:bg-dark-2 dark:text-dark-6">
+            <tr>
+              <th className="px-6 py-3 font-medium">Call SID</th>
+              <th className="px-6 py-3 font-medium">Caller</th>
+              <th className="px-6 py-3 font-medium">Tier</th>
+              <th className="px-6 py-3 font-medium">Date</th>
+              <th className="px-6 py-3 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stroke dark:divide-stroke-dark">
             {filtered.map((call) => (
-              <TableRow key={call.call_sid} className="cursor-pointer hover:bg-muted/50">
-                <TableCell className="font-mono text-sm">#{call.call_sid.slice(0, 10)}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+              <tr
+                key={call.call_sid}
+                className="cursor-pointer transition-colors hover:bg-gray-2/60 dark:hover:bg-dark-2/60"
+              >
+                <td className="px-6 py-3 font-mono text-xs text-dark-5 dark:text-dark-6">
+                  #{call.call_sid.slice(0, 10)}
+                </td>
+                <td className="px-6 py-3">
+                  <div className="flex items-center gap-2 font-medium text-dark dark:text-white">
+                    <Phone className="size-3.5 text-dark-5 dark:text-dark-6" />
                     {call.caller_phone}
                   </div>
-                </TableCell>
-                <TableCell>{call.tier}</TableCell>
-                <TableCell className="text-muted-foreground">{timeAgo(call.started_at)}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className={statusColors[call.status] || ""}>
+                </td>
+                <td className="px-6 py-3 capitalize text-dark dark:text-white">
+                  {call.tier}
+                </td>
+                <td className="px-6 py-3 text-dark-5 dark:text-dark-6">
+                  {timeAgo(call.started_at)}
+                </td>
+                <td className="px-6 py-3">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                      STATUS_STYLES[call.status] ??
+                        "bg-gray-3 text-dark-5 dark:bg-dark-3 dark:text-dark-6",
+                    )}
+                  >
                     {call.status}
-                  </Badge>
-                </TableCell>
-              </TableRow>
+                  </span>
+                </td>
+              </tr>
             ))}
             {filtered.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-dark-5 dark:text-dark-6">
                   No calls found
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             )}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
+          </tbody>
+        </table>
+      </div>
+    </PanelCard>
   );
 }

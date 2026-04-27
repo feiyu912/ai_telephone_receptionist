@@ -1,7 +1,7 @@
 "use client";
 
 import { useIsMobile } from "@/hooks/use-mobile";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState } from "react";
 
 type SidebarState = "expanded" | "collapsed";
 
@@ -16,11 +16,11 @@ type SidebarContextType = {
 const SidebarContext = createContext<SidebarContextType | null>(null);
 
 export function useSidebarContext() {
-  const context = useContext(SidebarContext);
-  if (!context) {
+  const ctx = useContext(SidebarContext);
+  if (!ctx) {
     throw new Error("useSidebarContext must be used within a SidebarProvider");
   }
-  return context;
+  return ctx;
 }
 
 export function SidebarProvider({
@@ -30,20 +30,21 @@ export function SidebarProvider({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
   const isMobile = useIsMobile();
+  // Track override along with the isMobile state it was set against, so the
+  // override naturally clears when the viewport crosses the breakpoint.
+  const [override, setOverride] = useState<{ isMobile: boolean; isOpen: boolean } | null>(
+    null,
+  );
+  const isOpen =
+    override && override.isMobile === isMobile
+      ? override.isOpen
+      : isMobile
+        ? false
+        : defaultOpen;
 
-  useEffect(() => {
-    if (isMobile) {
-      setIsOpen(false);
-    } else {
-      setIsOpen(true);
-    }
-  }, [isMobile]);
-
-  function toggleSidebar() {
-    setIsOpen((prev) => !prev);
-  }
+  const setIsOpen = (open: boolean) => setOverride({ isMobile, isOpen: open });
+  const toggleSidebar = () => setOverride({ isMobile, isOpen: !isOpen });
 
   return (
     <SidebarContext.Provider

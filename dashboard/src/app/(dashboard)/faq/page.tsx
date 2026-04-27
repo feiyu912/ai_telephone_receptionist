@@ -1,22 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Filter, Loader2 } from "lucide-react";
-import { Label } from "@/components/ui/label";
+import { Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ErrorCard } from "@/components/dashboard/error-card";
+import { PageSpinner, PanelCard } from "@/components/dashboard/loading";
 import { createFaq, deleteFaq, getFaqs, updateFaq } from "@/lib/api";
 import { useTenantId } from "@/lib/tenant";
+import { cn } from "@/lib/utils";
+
+const INPUT =
+  "block w-full rounded-lg border border-stroke bg-transparent px-4 py-2.5 text-sm text-dark outline-none transition-colors focus:border-primary dark:border-stroke-dark dark:bg-dark-2 dark:text-white dark:placeholder:text-dark-6";
 
 interface FAQ {
   id: number;
@@ -33,7 +32,6 @@ export default function FaqPage() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Add/Edit dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FAQ | null>(null);
   const [formCategory, setFormCategory] = useState("");
@@ -57,7 +55,9 @@ export default function FaqPage() {
     }
   }, [tenantId]);
 
-  useEffect(() => { fetchFaqs(); }, [fetchFaqs]);
+  useEffect(() => {
+    fetchFaqs();
+  }, [fetchFaqs]);
 
   const categories = [...new Set(faqs.map((f) => f.category))].sort();
 
@@ -124,146 +124,189 @@ export default function FaqPage() {
   };
 
   if (error) return <ErrorCard message={error} onRetry={fetchFaqs} />;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (loading) return <PageSpinner />;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">FAQ Management</h1>
-        <Button onClick={openAdd}>
-          <Plus className="w-4 h-4 mr-2" /> Add FAQ
-        </Button>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          <CategoryPill
+            active={activeCategory === null}
+            onClick={() => setActiveCategory(null)}
+          >
+            All ({faqs.length})
+          </CategoryPill>
+          {categories.map((cat) => (
+            <CategoryPill
+              key={cat}
+              active={activeCategory === cat}
+              onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+            >
+              {cat} ({faqs.filter((f) => f.category === cat).length})
+            </CategoryPill>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={openAdd}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+        >
+          <Plus className="size-4" /> Add FAQ
+        </button>
       </div>
 
-      {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingFaq ? "Edit FAQ" : "Add New FAQ"}</DialogTitle>
+            <DialogTitle>{editingFaq ? "Edit FAQ" : "Add new FAQ"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <div>
-              <Label>Category</Label>
-              <Input
+            <Field label="Category">
+              <input
+                className={INPUT}
                 placeholder="e.g. Services"
                 value={formCategory}
                 onChange={(e) => setFormCategory(e.target.value)}
               />
-            </div>
-            <div>
-              <Label>Question</Label>
-              <Input
-                placeholder="What is..."
+            </Field>
+            <Field label="Question">
+              <input
+                className={INPUT}
+                placeholder="What is…"
                 value={formQuestion}
                 onChange={(e) => setFormQuestion(e.target.value)}
               />
-            </div>
-            <div>
-              <Label>Answer</Label>
-              <Textarea
-                placeholder="The answer..."
+            </Field>
+            <Field label="Answer">
+              <textarea
+                className={cn(INPUT, "min-h-28")}
+                placeholder="The answer…"
                 rows={4}
                 value={formAnswer}
                 onChange={(e) => setFormAnswer(e.target.value)}
               />
-            </div>
-            {saveError && (
-              <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>
-            )}
-            <Button className="w-full" onClick={handleSave} disabled={saving || !formCategory || !formQuestion || !formAnswer}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            </Field>
+            {saveError && <p className="text-sm text-red">{saveError}</p>}
+            <button
+              type="button"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+              onClick={handleSave}
+              disabled={saving || !formCategory || !formQuestion || !formAnswer}
+            >
+              {saving ? <Loader2 className="size-4 animate-spin" /> : null}
               {editingFaq ? "Update FAQ" : "Save FAQ"}
-            </Button>
+            </button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Category badges */}
-      <div className="flex gap-2 flex-wrap">
-        <Badge
-          variant={activeCategory === null ? "secondary" : "outline"}
-          className="cursor-pointer"
-          onClick={() => setActiveCategory(null)}
-        >
-          All ({faqs.length})
-        </Badge>
-        {categories.map((cat) => (
-          <Badge
-            key={cat}
-            variant={activeCategory === cat ? "secondary" : "outline"}
-            className="cursor-pointer"
-            onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
-          >
-            {cat} ({faqs.filter((f) => f.category === cat).length})
-          </Badge>
-        ))}
-      </div>
-
-      <Card className="p-0">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <button className="p-1.5 rounded hover:bg-muted"><Filter className="w-4 h-4" /></button>
-          <Input
-            placeholder="Search FAQs..."
-            className="w-56 h-8"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <PanelCard
+        title={`${filtered.length} entries`}
+        action={
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-dark-5 dark:text-dark-6" />
+            <input
+              type="search"
+              placeholder="Search FAQs…"
+              className="w-56 rounded-lg border border-stroke bg-gray-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-2"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        }
+        className="overflow-hidden"
+      >
+        <div className="-mx-6 -my-6 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-2 text-xs uppercase tracking-wider text-dark-5 dark:bg-dark-2 dark:text-dark-6">
+              <tr>
+                <th className="px-6 py-3 font-medium">Category</th>
+                <th className="px-6 py-3 font-medium">Question</th>
+                <th className="px-6 py-3 font-medium">Answer</th>
+                <th className="w-24 px-6 py-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stroke dark:divide-stroke-dark">
+              {filtered.map((faq) => (
+                <tr key={faq.id}>
+                  <td className="px-6 py-3">
+                    <span className="inline-flex rounded-full border border-stroke bg-gray-2 px-2.5 py-0.5 text-xs font-medium text-dark-5 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-6">
+                      {faq.category}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3 font-medium text-dark dark:text-white">
+                    {faq.question}
+                  </td>
+                  <td className="max-w-xs truncate px-6 py-3 text-dark-5 dark:text-dark-6">
+                    {faq.answer}
+                  </td>
+                  <td className="px-6 py-3">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        className="rounded p-1.5 text-dark-5 hover:bg-gray-2 hover:text-dark dark:text-dark-6 dark:hover:bg-dark-2 dark:hover:text-white"
+                        onClick={() => openEdit(faq)}
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded p-1.5 text-red hover:bg-red-light-5 dark:hover:bg-red/10"
+                        onClick={() => handleDelete(faq.id)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-dark-5 dark:text-dark-6">
+                    No FAQs found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Category</TableHead>
-              <TableHead>Question</TableHead>
-              <TableHead>Answer</TableHead>
-              <TableHead className="w-20">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((faq) => (
-              <TableRow key={faq.id}>
-                <TableCell>
-                  <Badge variant="outline">{faq.category}</Badge>
-                </TableCell>
-                <TableCell className="font-medium">{faq.question}</TableCell>
-                <TableCell className="text-muted-foreground max-w-xs truncate">
-                  {faq.answer}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <button
-                      className="p-1.5 rounded hover:bg-muted"
-                      onClick={() => openEdit(faq)}
-                    >
-                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                    </button>
-                    <button
-                      className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
-                      onClick={() => handleDelete(faq.id)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                    </button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {filtered.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                  No FAQs found
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+      </PanelCard>
     </div>
+  );
+}
+
+function CategoryPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-primary bg-primary text-white"
+          : "border-stroke bg-white text-dark-5 hover:border-primary hover:text-primary dark:border-stroke-dark dark:bg-gray-dark dark:text-dark-6",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-dark-5 dark:text-dark-6">
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }

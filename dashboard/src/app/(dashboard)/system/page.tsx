@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card } from "@/components/ui/card";
-import { Activity, CheckCircle2, XCircle, ShieldAlert, Loader2 } from "lucide-react";
+import { CheckCircle2, ShieldAlert, XCircle } from "lucide-react";
+import { PageSpinner, PanelCard } from "@/components/dashboard/loading";
 import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -29,7 +29,6 @@ export default function SystemPage() {
     (async () => {
       const checks: ServiceStatus[] = [];
 
-      // Backend health
       try {
         const res = await fetch(`${API_BASE}/health`);
         if (!res.ok) {
@@ -46,18 +45,16 @@ export default function SystemPage() {
         checks.push({ name: "Backend API", status: "down", detail: "Unreachable" });
       }
 
-      // Tenant list (implies DB connectivity + admin auth)
       try {
-        const res = await fetch(`${API_BASE}/admin/tenants`, {
-          credentials: "include",
-        });
+        const res = await fetch(`${API_BASE}/admin/tenants`, { credentials: "include" });
         if (!res.ok) {
           checks.push({
             name: "Supabase PostgreSQL",
             status: "down",
-            detail: res.status === 401 || res.status === 403
-              ? "Not authorized"
-              : `HTTP ${res.status}`,
+            detail:
+              res.status === 401 || res.status === 403
+                ? "Not authorized"
+                : `HTTP ${res.status}`,
           });
         } else {
           const data = await res.json();
@@ -81,64 +78,78 @@ export default function SystemPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <Activity className="w-6 h-6" /> System Health
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
-          <ShieldAlert className="w-3 h-3" /> Admin view — infrastructure status
-        </p>
-      </div>
+      <p className="flex items-center gap-1.5 text-sm text-dark-5 dark:text-dark-6">
+        <ShieldAlert className="size-3.5" /> Admin view — infrastructure status
+      </p>
 
       {loading ? (
-        <div className="flex items-center justify-center h-40">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
+        <PageSpinner className="h-40" />
       ) : (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2 2xl:gap-7.5">
           {statuses.map((s) => (
-            <Card key={s.name} className="p-5">
+            <article
+              key={s.name}
+              className="rounded-[10px] bg-white p-6 shadow-1 dark:bg-gray-dark"
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium">{s.name}</div>
+                  <div className="font-semibold text-dark dark:text-white">{s.name}</div>
                   {s.detail && (
-                    <div className="text-xs text-muted-foreground mt-1">{s.detail}</div>
+                    <div className="mt-1 text-xs text-dark-5 dark:text-dark-6">
+                      {s.detail}
+                    </div>
                   )}
                 </div>
                 {s.status === "up" ? (
-                  <CheckCircle2 className="w-6 h-6 text-green-500" />
+                  <CheckCircle2 className="size-6 text-green" />
                 ) : (
-                  <XCircle className="w-6 h-6 text-red-500" />
+                  <XCircle className="size-6 text-red" />
                 )}
               </div>
-            </Card>
+            </article>
           ))}
         </div>
       )}
 
-      <Card className="p-5">
-        <h3 className="font-medium mb-3">Service Endpoints</h3>
-        <div className="space-y-2 text-sm font-mono">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Backend API</span>
-            <a href={API_BASE} target="_blank" rel="noopener" className="text-primary hover:underline">
-              {API_BASE}
-            </a>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Voice webhook</span>
-            <span>{API_BASE}/voice/incoming-call</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">WebSocket stream</span>
-            <span>{API_BASE.replace("https://", "wss://")}/ws/media-stream/{"{call_sid}"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">SMS inbound</span>
-            <span>{API_BASE}/sms/inbound</span>
-          </div>
+      <PanelCard title="Service endpoints">
+        <div className="space-y-3 font-mono text-sm">
+          <Endpoint label="Backend API" value={API_BASE} link={API_BASE} />
+          <Endpoint label="Voice webhook" value={`${API_BASE}/voice/incoming-call`} />
+          <Endpoint
+            label="WebSocket stream"
+            value={`${API_BASE.replace("https://", "wss://")}/ws/media-stream/{call_sid}`}
+          />
+          <Endpoint label="SMS inbound" value={`${API_BASE}/sms/inbound`} />
         </div>
-      </Card>
+      </PanelCard>
+    </div>
+  );
+}
+
+function Endpoint({
+  label,
+  value,
+  link,
+}: {
+  label: string;
+  value: string;
+  link?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-dark-5 dark:text-dark-6">{label}</span>
+      {link ? (
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener"
+          className="text-primary hover:underline"
+        >
+          {value}
+        </a>
+      ) : (
+        <span className="text-dark dark:text-white">{value}</span>
+      )}
     </div>
   );
 }

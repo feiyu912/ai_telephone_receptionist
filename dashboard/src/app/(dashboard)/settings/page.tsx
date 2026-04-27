@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import { PageSpinner } from "@/components/dashboard/loading";
 import { API_BASE, getOAuthStatus, getTenantSettings, updateTenantSettings } from "@/lib/api";
 import { useTenantId, useTenant } from "@/lib/tenant";
 
@@ -66,18 +67,10 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading || !settings) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (loading || !settings) return <PageSpinner />;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Settings</h1>
-
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>

@@ -2,15 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Loader2, Building2, Phone, ShieldAlert } from "lucide-react";
+import { Brain, Building2, Phone, ShieldAlert, Users } from "lucide-react";
+import { OverviewCard } from "@/components/dashboard/overview-card";
+import { PageSpinner, PanelCard } from "@/components/dashboard/loading";
 import { api } from "@/lib/api";
 import { useTenant, type Tenant } from "@/lib/tenant";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 
 interface TenantWithStats extends Tenant {
   total_calls?: number;
@@ -18,10 +16,10 @@ interface TenantWithStats extends Tenant {
   total_memory_facts?: number;
 }
 
-const tierColors: Record<string, string> = {
-  starter: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-  growth: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  pro: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+const TIER_STYLES: Record<string, string> = {
+  starter: "bg-gray-3 text-dark-5 dark:bg-dark-3 dark:text-dark-6",
+  growth: "bg-blue-light-5 text-blue",
+  pro: "bg-primary/10 text-primary",
 };
 
 export default function TenantsPage() {
@@ -31,7 +29,6 @@ export default function TenantsPage() {
   const [stats, setStats] = useState<Record<string, TenantWithStats>>({});
   const [loading, setLoading] = useState(true);
 
-  // Gate: admin-only
   useEffect(() => {
     if (user && user.role !== "admin") {
       router.push("/overview");
@@ -63,100 +60,122 @@ export default function TenantsPage() {
   };
 
   const totalCalls = Object.values(stats).reduce((a, b) => a + (b.total_calls ?? 0), 0);
-  const totalCustomers = Object.values(stats).reduce((a, b) => a + (b.total_customers ?? 0), 0);
-  const totalMemories = Object.values(stats).reduce((a, b) => a + (b.total_memory_facts ?? 0), 0);
+  const totalCustomers = Object.values(stats).reduce(
+    (a, b) => a + (b.total_customers ?? 0),
+    0,
+  );
+  const totalMemories = Object.values(stats).reduce(
+    (a, b) => a + (b.total_memory_facts ?? 0),
+    0,
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <Building2 className="w-6 h-6" /> All Tenants
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
-            <ShieldAlert className="w-3 h-3" /> Admin view — showing data for all clients
-          </p>
-        </div>
+      <p className="flex items-center gap-1.5 text-sm text-dark-5 dark:text-dark-6">
+        <ShieldAlert className="size-3.5" /> Admin view — showing data for all clients
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4 2xl:gap-7.5">
+        <OverviewCard
+          label="Total Tenants"
+          value={tenants.length}
+          Icon={Building2}
+          iconClassName="bg-primary/10 text-primary"
+        />
+        <OverviewCard
+          label="Total Calls"
+          value={totalCalls}
+          Icon={Phone}
+          iconClassName="bg-blue-light-5 text-blue"
+        />
+        <OverviewCard
+          label="Total Customers"
+          value={totalCustomers}
+          Icon={Users}
+          iconClassName="bg-green-light-7 text-green"
+        />
+        <OverviewCard
+          label="Memory Facts"
+          value={totalMemories}
+          Icon={Brain}
+          iconClassName="bg-yellow-light-4 text-yellow-dark"
+        />
       </div>
 
-      {/* Aggregate stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card className="p-5">
-          <div className="text-sm text-muted-foreground">Total Tenants</div>
-          <div className="text-3xl font-bold mt-1">{tenants.length}</div>
-        </Card>
-        <Card className="p-5">
-          <div className="text-sm text-muted-foreground">Total Calls</div>
-          <div className="text-3xl font-bold mt-1">{totalCalls}</div>
-        </Card>
-        <Card className="p-5">
-          <div className="text-sm text-muted-foreground">Total Customers</div>
-          <div className="text-3xl font-bold mt-1">{totalCustomers}</div>
-        </Card>
-        <Card className="p-5">
-          <div className="text-sm text-muted-foreground">Memory Facts</div>
-          <div className="text-3xl font-bold mt-1">{totalMemories}</div>
-        </Card>
-      </div>
-
-      <Card className="p-0">
+      <PanelCard title={`${tenants.length} tenants`} className="overflow-hidden">
         {loading && tenants.length === 0 ? (
-          <div className="flex items-center justify-center h-40">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-          </div>
+          <PageSpinner className="h-40" />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead>Calls</TableHead>
-                <TableHead>Customers</TableHead>
-                <TableHead>Memory Facts</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tenants.map((t) => {
-                const s = stats[t.tenant_id];
-                return (
-                  <TableRow
-                    key={t.tenant_id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => openTenant(t.tenant_id)}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                          {t.company_name?.charAt(0) || "?"}
+          <div className="-mx-6 -my-6 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-2 text-xs uppercase tracking-wider text-dark-5 dark:bg-dark-2 dark:text-dark-6">
+                <tr>
+                  <th className="px-6 py-3 font-medium">Tenant</th>
+                  <th className="px-6 py-3 font-medium">Phone</th>
+                  <th className="px-6 py-3 font-medium">Tier</th>
+                  <th className="px-6 py-3 font-medium">Calls</th>
+                  <th className="px-6 py-3 font-medium">Customers</th>
+                  <th className="px-6 py-3 font-medium">Memory Facts</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stroke dark:divide-stroke-dark">
+                {tenants.map((t) => {
+                  const s = stats[t.tenant_id];
+                  return (
+                    <tr
+                      key={t.tenant_id}
+                      className="cursor-pointer transition-colors hover:bg-gray-2/60 dark:hover:bg-dark-2/60"
+                      onClick={() => openTenant(t.tenant_id)}
+                    >
+                      <td className="px-6 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                            {t.company_name?.charAt(0) || "?"}
+                          </span>
+                          <div>
+                            <div className="font-medium text-dark dark:text-white">
+                              {t.company_name}
+                            </div>
+                            <div className="text-xs text-dark-5 dark:text-dark-6">
+                              {t.slug}
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="font-medium">{t.company_name}</div>
-                          <div className="text-xs text-muted-foreground">{t.slug}</div>
+                      </td>
+                      <td className="px-6 py-3 text-dark-5 dark:text-dark-6">
+                        <div className="flex items-center gap-1">
+                          <Phone className="size-3.5" />
+                          {t.phone_number}
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Phone className="w-3.5 h-3.5" />
-                        {t.phone_number}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className={tierColors[t.tier] || ""}>
-                        {t.tier}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{s?.total_calls ?? "—"}</TableCell>
-                    <TableCell>{s?.total_customers ?? "—"}</TableCell>
-                    <TableCell>{s?.total_memory_facts ?? "—"}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      </td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                            TIER_STYLES[t.tier] ??
+                              "bg-gray-3 text-dark-5 dark:bg-dark-3 dark:text-dark-6",
+                          )}
+                        >
+                          {t.tier}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-dark dark:text-white">
+                        {s?.total_calls ?? "—"}
+                      </td>
+                      <td className="px-6 py-3 text-dark dark:text-white">
+                        {s?.total_customers ?? "—"}
+                      </td>
+                      <td className="px-6 py-3 text-dark dark:text-white">
+                        {s?.total_memory_facts ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </PanelCard>
     </div>
   );
 }

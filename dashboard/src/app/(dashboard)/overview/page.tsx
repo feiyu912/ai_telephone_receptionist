@@ -1,13 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { StatCard } from "@/components/dashboard/stat-card";
-import { ErrorCard } from "@/components/dashboard/error-card";
-import { Card } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Brain, Phone, Users, Zap } from "lucide-react";
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
 } from "recharts";
+import { ErrorCard } from "@/components/dashboard/error-card";
+import { OverviewCard } from "@/components/dashboard/overview-card";
+import { PageSpinner, PanelCard } from "@/components/dashboard/loading";
 import { getAnalytics } from "@/lib/api";
 import { useTenantId } from "@/lib/tenant";
 
@@ -17,6 +21,8 @@ interface Analytics {
   total_memory_facts: number;
   event_breakdown: { event_type: string; cnt: number }[];
 }
+
+const PIE_COLORS = ["#5750F1", "#22AD5C", "#0ABEF9", "#FFA70B", "#F23030", "#8155FF"];
 
 export default function OverviewPage() {
   const [data, setData] = useState<Analytics | null>(null);
@@ -32,86 +38,125 @@ export default function OverviewPage() {
       .catch((e: Error) => setError(e.message || "Request failed"));
   }, [tenantId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(load, [load]);
 
   if (error) return <ErrorCard message={error} onRetry={load} />;
+  if (!data) return <PageSpinner />;
 
-  if (!data) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  const outcomeData = (data?.event_breakdown || [])
-    .filter((e) => ["call_completed", "call_started", "sms_followup_sent", "transfer_requested"].includes(e.event_type))
+  const outcomeData = data.event_breakdown
+    .filter((e) =>
+      ["call_completed", "call_started", "sms_followup_sent", "transfer_requested"].includes(
+        e.event_type,
+      ),
+    )
     .map((e, i) => ({
       name: e.event_type.replace(/_/g, " "),
       value: e.cnt,
-      color: ["#6366f1", "#8b5cf6", "#06b6d4", "#e5e7eb"][i % 4],
+      color: PIE_COLORS[i % PIE_COLORS.length],
     }));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Overview</h1>
+    <div className="space-y-6 2xl:space-y-7.5">
+      <div className="grid gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4 2xl:gap-7.5">
+        <OverviewCard
+          label="Total Calls"
+          value={data.total_calls.toLocaleString()}
+          Icon={Phone}
+          iconClassName="bg-primary/10 text-primary"
+        />
+        <OverviewCard
+          label="Active Customers"
+          value={data.total_customers.toLocaleString()}
+          Icon={Users}
+          iconClassName="bg-green-light-7 text-green"
+        />
+        <OverviewCard
+          label="Memory Facts"
+          value={data.total_memory_facts.toLocaleString()}
+          Icon={Brain}
+          iconClassName="bg-blue-light-5 text-blue"
+        />
+        <OverviewCard
+          label="Event Types"
+          value={data.event_breakdown.length}
+          Icon={Zap}
+          iconClassName="bg-yellow-light-4 text-yellow-dark"
+        />
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Total Calls" value={String(data?.total_calls || 0)} className="bg-primary/5" />
-        <StatCard label="Active Customers" value={String(data?.total_customers || 0)} />
-        <StatCard label="Memory Facts" value={String(data?.total_memory_facts || 0)} />
-        <StatCard label="Event Types" value={String(data?.event_breakdown?.length || 0)} />
-      </div>
-
-      {/* Event Breakdown */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="p-5">
-          <h3 className="font-medium mb-4">Event Breakdown</h3>
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2 2xl:gap-7.5">
+        <PanelCard title="Event Breakdown">
           {outcomeData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie data={outcomeData} innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
-                  {outcomeData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={outcomeData}
+                    innerRadius={60}
+                    outerRadius={95}
+                    dataKey="value"
+                    paddingAngle={2}
+                    stroke="none"
+                  >
+                    {outcomeData.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: "#fff",
+                      border: "1px solid #E6EBF1",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <ul className="mt-4 space-y-2">
+                {data.event_breakdown.map((item) => (
+                  <li
+                    key={item.event_type}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="text-dark-5 dark:text-dark-6">
+                      {item.event_type.replace(/_/g, " ")}
+                    </span>
+                    <span className="font-mono font-semibold text-dark dark:text-white">
+                      {item.cnt}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : (
-            <p className="text-muted-foreground text-sm py-8 text-center">No events yet</p>
+            <p className="py-12 text-center text-sm text-dark-5 dark:text-dark-6">
+              No events yet — calls will appear here as they come in.
+            </p>
           )}
-          <div className="space-y-2 mt-2">
-            {(data?.event_breakdown || []).map((item) => (
-              <div key={item.event_type} className="flex items-center justify-between text-sm">
-                <span>{item.event_type.replace(/_/g, " ")}</span>
-                <span className="text-muted-foreground font-mono">{item.cnt}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+        </PanelCard>
 
-        <Card className="p-5">
-          <h3 className="font-medium mb-4">Quick Stats</h3>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
-              <span className="text-sm">Total Calls</span>
-              <span className="text-2xl font-bold">{data?.total_calls || 0}</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
-              <span className="text-sm">Customers</span>
-              <span className="text-2xl font-bold">{data?.total_customers || 0}</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
-              <span className="text-sm">Memory Facts Stored</span>
-              <span className="text-2xl font-bold">{data?.total_memory_facts || 0}</span>
-            </div>
+        <PanelCard title="Quick Stats">
+          <div className="space-y-3">
+            <Stat label="Total Calls" value={data.total_calls} />
+            <Stat label="Customers" value={data.total_customers} />
+            <Stat label="Memory Facts Stored" value={data.total_memory_facts} />
           </div>
-        </Card>
+        </PanelCard>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg bg-gray-2 p-4 dark:bg-dark-2">
+      <span className="text-sm font-medium text-dark-5 dark:text-dark-6">
+        {label}
+      </span>
+      <span className="text-2xl font-bold text-dark dark:text-white">
+        {value.toLocaleString()}
+      </span>
     </div>
   );
 }

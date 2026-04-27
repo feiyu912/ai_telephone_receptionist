@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Check, ExternalLink, Loader2 } from "lucide-react";
+import { Check, ExternalLink } from "lucide-react";
+import { PageSpinner } from "@/components/dashboard/loading";
 import { getOAuthStatus, API_BASE } from "@/lib/api";
 import { useTenantId } from "@/lib/tenant";
+import { cn } from "@/lib/utils";
 
 interface OAuthStatus {
   hubspot?: { connected: boolean; updated_at?: string };
@@ -38,7 +37,7 @@ export default function IntegrationsPage() {
     {
       name: "HubSpot CRM",
       description: "Sync contacts, create engagement notes, and track meetings.",
-      icon: "🟠",
+      tone: "bg-orange-light/15 text-orange-light",
       connected: status.hubspot?.connected ?? false,
       connectUrl: `${API_BASE}/oauth/hubspot/authorize/${tenantId}`,
       env: "Shared: HUBSPOT_ACCESS_TOKEN",
@@ -46,7 +45,7 @@ export default function IntegrationsPage() {
     {
       name: "Microsoft Outlook",
       description: "Calendar booking and email follow-ups via Microsoft Graph.",
-      icon: "🔵",
+      tone: "bg-blue-light-5 text-blue",
       connected: status.microsoft?.connected ?? false,
       connectUrl: `${API_BASE}/oauth/microsoft/authorize/${tenantId}`,
       env: "Shared: MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET",
@@ -54,7 +53,7 @@ export default function IntegrationsPage() {
     {
       name: "Twilio",
       description: "Voice calls, SMS, and WhatsApp messaging.",
-      icon: "🔴",
+      tone: "bg-red-light-5 text-red",
       connected: true,
       connectUrl: null,
       env: "Shared: TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN",
@@ -62,7 +61,7 @@ export default function IntegrationsPage() {
     {
       name: "OpenAI",
       description: "GPT Realtime API for sub-second voice AI responses.",
-      icon: "⚫",
+      tone: "bg-dark-2 text-white dark:bg-white dark:text-dark",
       connected: true,
       connectUrl: null,
       env: "Shared: OPENAI_API_KEY",
@@ -70,7 +69,7 @@ export default function IntegrationsPage() {
     {
       name: "Cartesia",
       description: "Fallback TTS/STT (not used when OpenAI Realtime active).",
-      icon: "🟢",
+      tone: "bg-green-light-7 text-green",
       connected: true,
       connectUrl: null,
       env: "Shared: CARTESIA_API_KEY",
@@ -78,69 +77,75 @@ export default function IntegrationsPage() {
     {
       name: "Supabase",
       description: "PostgreSQL database for multi-tenant storage.",
-      icon: "🟢",
+      tone: "bg-green-light-7 text-green",
       connected: true,
       connectUrl: null,
       env: "Shared: DATABASE_URL",
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (loading) return <PageSpinner />;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Integrations</h1>
-        <p className="text-muted-foreground mt-1">
-          Connect your accounts to enable features like CRM sync, calendar booking, and email notifications.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2 2xl:gap-7.5">
         {integrations.map((integration) => (
-          <Card key={integration.name} className="p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{integration.icon}</span>
+          <article
+            key={integration.name}
+            className="rounded-[10px] bg-white p-6 shadow-1 dark:bg-gray-dark"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "flex size-11 items-center justify-center rounded-full text-base font-bold uppercase",
+                    integration.tone,
+                  )}
+                >
+                  {integration.name.charAt(0)}
+                </span>
                 <div>
-                  <h3 className="font-medium">{integration.name}</h3>
-                  <p className="text-sm text-muted-foreground mt-0.5">
+                  <h3 className="font-semibold text-dark dark:text-white">
+                    {integration.name}
+                  </h3>
+                  <p className="mt-0.5 text-sm text-dark-5 dark:text-dark-6">
                     {integration.description}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1 font-mono">
+                  <p className="mt-1 font-mono text-xs text-dark-5 dark:text-dark-6">
                     {integration.env}
                   </p>
                 </div>
               </div>
               {integration.connected ? (
-                <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  <Check className="w-3 h-3 mr-1" /> Connected
-                </Badge>
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-light-7 px-2.5 py-0.5 text-xs font-medium text-green dark:bg-green/15">
+                  <Check className="size-3" /> Connected
+                </span>
               ) : (
-                <Badge variant="outline">Not connected</Badge>
+                <span className="inline-flex items-center rounded-full border border-stroke px-2.5 py-0.5 text-xs font-medium text-dark-5 dark:border-stroke-dark dark:text-dark-6">
+                  Not connected
+                </span>
               )}
             </div>
             <div className="mt-4">
               {integration.connected ? (
-                <Button variant="outline" size="sm" disabled>
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-lg border border-stroke px-3 py-1.5 text-xs font-medium text-dark-5 opacity-60 dark:border-stroke-dark dark:text-dark-6"
+                >
                   Connected
-                </Button>
+                </button>
               ) : integration.connectUrl ? (
-                <a href={integration.connectUrl}>
-                  <Button size="sm">
-                    <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                    Connect {integration.name}
-                  </Button>
+                <a
+                  href={integration.connectUrl}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90"
+                >
+                  <ExternalLink className="size-3.5" />
+                  Connect {integration.name}
                 </a>
               ) : null}
             </div>
-          </Card>
+          </article>
         ))}
       </div>
     </div>
