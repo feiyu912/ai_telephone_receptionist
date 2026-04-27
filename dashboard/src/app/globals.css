@@ -4,117 +4,252 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Design tokens ported from NextAdmin / TailAdmin
+ * (https://github.com/NextAdminHQ/nextjs-admin-dashboard tailwind.config.ts).
+ *
+ * NextAdmin is Tailwind v3; we're on v4. Same names, same values, exposed
+ * via @theme so any component written for NextAdmin (e.g. classes like
+ * `bg-gray-2`, `text-dark-5`, `shadow-1`, `text-heading-6`) drops in here
+ * with no changes.
+ */
+
+@theme {
+  /* ── Brand + neutrals ─────────────────────────────────────────── */
+  --color-primary:        #5750F1;
+  --color-stroke:         #E6EBF1;
+  --color-stroke-dark:    #27303E;
+
+  /* dark = primary text scale (1=darkest text → 8=lightest border) */
+  --color-dark:           #111928;
+  --color-dark-2:         #1F2A37;
+  --color-dark-3:         #374151;
+  --color-dark-4:         #4B5563;
+  --color-dark-5:         #6B7280;
+  --color-dark-6:         #9CA3AF;
+  --color-dark-7:         #D1D5DB;
+  --color-dark-8:         #E5E7EB;
+
+  /* gray = surface scale (1=lightest fill → 7=mid) */
+  --color-gray:           #EFF4FB;
+  --color-gray-dark:      #122031;
+  --color-gray-1:         #F9FAFB;
+  --color-gray-2:         #F3F4F6;
+  --color-gray-3:         #E5E7EB;
+  --color-gray-4:         #D1D5DB;
+  --color-gray-5:         #9CA3AF;
+  --color-gray-6:         #6B7280;
+  --color-gray-7:         #374151;
+
+  /* ── Semantic colours ─────────────────────────────────────────── */
+  --color-green:           #22AD5C;
+  --color-green-dark:      #1A8245;
+  --color-green-light:     #2CD673;
+  --color-green-light-1:   #10B981;
+  --color-green-light-2:   #57DE8F;
+  --color-green-light-3:   #82E6AC;
+  --color-green-light-4:   #ACEFC8;
+  --color-green-light-5:   #C2F3D6;
+  --color-green-light-6:   #DAF8E6;
+  --color-green-light-7:   #E9FBF0;
+
+  --color-red:             #F23030;
+  --color-red-dark:        #E10E0E;
+  --color-red-light:       #F56060;
+  --color-red-light-2:     #F89090;
+  --color-red-light-3:     #FBC0C0;
+  --color-red-light-4:     #FDD8D8;
+  --color-red-light-5:     #FEEBEB;
+  --color-red-light-6:     #FEF3F3;
+
+  --color-blue:            #3C50E0;
+  --color-blue-dark:       #1C3FB7;
+  --color-blue-light:      #5475E5;
+  --color-blue-light-2:    #8099EC;
+  --color-blue-light-3:    #ADBCF2;
+  --color-blue-light-4:    #C3CEF6;
+  --color-blue-light-5:    #E1E8FF;
+
+  --color-orange-light:    #F59460;
+
+  --color-yellow-dark:     #F59E0B;
+  --color-yellow-dark-2:   #D97706;
+  --color-yellow-light:    #FCD34D;
+  --color-yellow-light-4:  #FFFBEB;
+
+  /* ── Typography scale ─────────────────────────────────────────── */
+  --text-heading-1:        60px;  --text-heading-1--line-height: 72px;
+  --text-heading-2:        48px;  --text-heading-2--line-height: 58px;
+  --text-heading-3:        40px;  --text-heading-3--line-height: 48px;
+  --text-heading-4:        35px;  --text-heading-4--line-height: 45px;
+  --text-heading-5:        28px;  --text-heading-5--line-height: 40px;
+  --text-heading-6:        24px;  --text-heading-6--line-height: 30px;
+  --text-body-2xlg:        22px;  --text-body-2xlg--line-height: 28px;
+  --text-body-sm:          14px;  --text-body-sm--line-height: 22px;
+  --text-body-xs:          12px;  --text-body-xs--line-height: 20px;
+
+  /* ── Spacing extras (NextAdmin uses many half-rem stops) ──────── */
+  --spacing-4_5:   1.125rem;
+  --spacing-5_5:   1.375rem;
+  --spacing-6_5:   1.625rem;
+  --spacing-7_5:   1.875rem;
+  --spacing-8_5:   2.125rem;
+  --spacing-9_5:   2.375rem;
+  --spacing-10_5:  2.625rem;
+  --spacing-11_5:  2.875rem;
+  --spacing-12_5:  3.125rem;
+  --spacing-13:    3.25rem;
+  --spacing-13_5:  3.375rem;
+  --spacing-14_5:  3.625rem;
+  --spacing-15:    3.75rem;
+  --spacing-15_5:  3.875rem;
+  --spacing-16_5:  4.125rem;
+  --spacing-17:    4.25rem;
+  --spacing-17_5:  4.375rem;
+  --spacing-18:    4.5rem;
+  --spacing-22_5:  5.625rem;
+  --spacing-25:    6.25rem;
+  --spacing-30:    7.5rem;
+  --spacing-65:    16.25rem;       /* sidebar width */
+  --spacing-72_5:  18.125rem;      /* sidebar (NextAdmin uses 18.125rem) */
+
+  /* ── Shadows (very subtle, layered) ───────────────────────────── */
+  --shadow-default: 0px 4px 7px 0px rgba(0, 0, 0, 0.14);
+  --shadow-card:    0px 1px 2px 0px rgba(0, 0, 0, 0.12);
+  --shadow-card-2:  0px 8px 13px -3px rgba(0, 0, 0, 0.07);
+  --shadow-card-3:  0px 2px 3px 0px rgba(183, 183, 183, 0.50);
+  --shadow-card-4:  0px 1px 3px 0px rgba(0, 0, 0, 0.12);
+  --shadow-card-5:  0px 1px 3px 0px rgba(0, 0, 0, 0.13);
+  --shadow-card-6:  0px 3px 8px 0px rgba(0, 0, 0, 0.08);
+  --shadow-card-7:  0px 0.5px 3px 0px rgba(0, 0, 0, 0.18);
+  --shadow-card-8:  0px 1px 2px 0px rgba(0, 0, 0, 0.10);
+  --shadow-card-9:  0px 1px 3px 0px rgba(0, 0, 0, 0.08);
+  --shadow-card-10: 0px 2px 3px 0px rgba(0, 0, 0, 0.10);
+  --shadow-1:       0px 1px 2px 0px rgba(84, 87, 118, 0.12);
+  --shadow-2:       0px 2px 3px 0px rgba(84, 87, 118, 0.15);
+  --shadow-3:       0px 8px 8.466px 0px rgba(113, 116, 152, 0.05),
+                    0px 8px 16.224px 0px rgba(113, 116, 152, 0.07),
+                    0px 18px 31px   0px rgba(113, 116, 152, 0.10);
+  --shadow-4:       0px 13px 40px 0px rgba(13, 10, 44, 0.22),
+                    0px -8px 18px 0px rgba(13, 10, 44, 0.04);
+  --shadow-5:       0px 10px 30px 0px rgba(85, 106, 235, 0.12),
+                    0px 4px 10px  0px rgba(85, 106, 235, 0.04),
+                    0px -18px 38px 0px rgba(85, 106, 235, 0.04);
+  --shadow-6:       0px 12px 34px 0px rgba(13, 10, 44, 0.08),
+                    0px 34px 26px 0px rgba(13, 10, 44, 0.05);
+  --shadow-7:       0px 18px 25px 0px rgba(113, 116, 152, 0.05);
+}
+
+/* shadcn/Radix tokens — kept so any shadcn primitives we still use match
+ * the NextAdmin palette automatically.                              */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  --color-background:               var(--background);
+  --color-foreground:               var(--foreground);
+  --font-sans:                      var(--font-sans);
+  --font-mono:                      var(--font-geist-mono);
+  --font-heading:                   var(--font-sans);
+  --color-sidebar-ring:             var(--sidebar-ring);
+  --color-sidebar-border:           var(--sidebar-border);
+  --color-sidebar-accent-foreground:var(--sidebar-accent-foreground);
+  --color-sidebar-accent:           var(--sidebar-accent);
+  --color-sidebar-primary-foreground:var(--sidebar-primary-foreground);
+  --color-sidebar-primary:          var(--sidebar-primary);
+  --color-sidebar-foreground:       var(--sidebar-foreground);
+  --color-sidebar:                  var(--sidebar);
+  --color-chart-5:                  var(--chart-5);
+  --color-chart-4:                  var(--chart-4);
+  --color-chart-3:                  var(--chart-3);
+  --color-chart-2:                  var(--chart-2);
+  --color-chart-1:                  var(--chart-1);
+  --color-ring:                     var(--ring);
+  --color-input:                    var(--input);
+  --color-border:                   var(--border);
+  --color-destructive:              var(--destructive);
+  --color-accent-foreground:        var(--accent-foreground);
+  --color-accent:                   var(--accent);
+  --color-muted-foreground:         var(--muted-foreground);
+  --color-muted:                    var(--muted);
+  --color-secondary-foreground:     var(--secondary-foreground);
+  --color-secondary:                var(--secondary);
+  --color-primary-foreground:       var(--primary-foreground);
+  --color-popover-foreground:       var(--popover-foreground);
+  --color-popover:                  var(--popover);
+  --color-card-foreground:          var(--card-foreground);
+  --color-card:                     var(--card);
+  --radius-sm:  calc(var(--radius) * 0.6);
+  --radius-md:  calc(var(--radius) * 0.8);
+  --radius-lg:  var(--radius);
+  --radius-xl:  calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background:                    #F3F4F6;       /* gray-2 canvas */
+  --foreground:                    #111928;       /* dark text */
+  --card:                          #FFFFFF;
+  --card-foreground:               #111928;
+  --popover:                       #FFFFFF;
+  --popover-foreground:            #111928;
+  --primary-foreground:             #FFFFFF;
+  --secondary:                     #EFF4FB;
+  --secondary-foreground:          #111928;
+  --muted:                         #F3F4F6;
+  --muted-foreground:              #6B7280;
+  --accent:                        rgba(87, 80, 241, 0.07);
+  --accent-foreground:              #5750F1;
+  --destructive:                   #F23030;
+  --border:                        #E6EBF1;
+  --input:                         #E6EBF1;
+  --ring:                          #5750F1;
+  --chart-1:                       #5750F1;
+  --chart-2:                       #22AD5C;
+  --chart-3:                       #3C50E0;
+  --chart-4:                       #F59E0B;
+  --chart-5:                       #F23030;
+  --radius:                        0.625rem;       /* 10px */
+  --sidebar:                       #FFFFFF;
+  --sidebar-foreground:            #4B5563;
+  --sidebar-primary:               #5750F1;
+  --sidebar-primary-foreground:    #FFFFFF;
+  --sidebar-accent:                rgba(87, 80, 241, 0.07);
+  --sidebar-accent-foreground:     #5750F1;
+  --sidebar-border:                #E6EBF1;
+  --sidebar-ring:                  #5750F1;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background:                    #020D1A;
+  --foreground:                    #FFFFFF;
+  --card:                          #122031;
+  --card-foreground:               #FFFFFF;
+  --popover:                       #122031;
+  --popover-foreground:            #FFFFFF;
+  --primary-foreground:             #FFFFFF;
+  --secondary:                     #1F2A37;
+  --secondary-foreground:          #FFFFFF;
+  --muted:                         #1F2A37;
+  --muted-foreground:              #9CA3AF;
+  --accent:                        rgba(255, 255, 255, 0.10);
+  --accent-foreground:              #FFFFFF;
+  --destructive:                   #F23030;
+  --border:                        #27303E;
+  --input:                         #27303E;
+  --ring:                          #5750F1;
+  --chart-1:                       #5750F1;
+  --chart-2:                       #22AD5C;
+  --chart-3:                       #3C50E0;
+  --chart-4:                       #F59E0B;
+  --chart-5:                       #F23030;
+  --sidebar:                       #122031;
+  --sidebar-foreground:            #9CA3AF;
+  --sidebar-primary:               #5750F1;
+  --sidebar-primary-foreground:    #FFFFFF;
+  --sidebar-accent:                rgba(255, 255, 255, 0.10);
+  --sidebar-accent-foreground:     #FFFFFF;
+  --sidebar-border:                #27303E;
+  --sidebar-ring:                  #5750F1;
 }
 
 @layer base {
@@ -122,9 +257,26 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .custom-scrollbar { overflow: auto; }
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.10);
+    border-radius: 9999px;
+  }
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.10);
   }
 }
