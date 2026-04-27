@@ -36,6 +36,19 @@ def build_system_prompt(
     # FAQ block
     faq_block = f"\n\n## FAQ KNOWLEDGE BASE\n{faq_context}" if faq_context else ""
 
+    # Timezone block — every booking happens in the tenant's local timezone,
+    # so the AI must always state which one and read times back in it.
+    tz = tenant.business_hours_timezone or "America/Chicago"
+    tz_label = _friendly_tz(tz)
+    timezone_block = f"""
+
+## TIMING (CRITICAL)
+- All appointment times are in **{tz_label}** ({tz}).
+- When a caller proposes a time, ALWAYS confirm the timezone explicitly: "Just to confirm, that's 3 PM {tz_label}, correct?"
+- After booking, state the time AND timezone in your confirmation: "Booked for 3 PM {tz_label} on Tuesday, April 29."
+- If a caller is in another timezone, do not silently convert — ask them which timezone they meant.
+"""
+
     # Rules block (no more tag instructions — function calling handles actions)
     rules_block = """
 
@@ -55,7 +68,29 @@ def build_system_prompt(
 - If the caller does not confirm the email, do not include it in any tool call.
 """
 
-    return f"{base_prompt}{memory_block}{faq_block}{rules_block}"
+    return f"{base_prompt}{memory_block}{faq_block}{timezone_block}{rules_block}"
+
+
+_TZ_FRIENDLY = {
+    "America/Chicago":     "Central Time",
+    "America/New_York":    "Eastern Time",
+    "America/Denver":      "Mountain Time",
+    "America/Phoenix":     "Mountain Time (no DST)",
+    "America/Los_Angeles": "Pacific Time",
+    "America/Anchorage":   "Alaska Time",
+    "Pacific/Honolulu":    "Hawaii Time",
+    "Europe/London":       "UK Time",
+    "Europe/Paris":        "Central European Time",
+    "Asia/Shanghai":       "China Time",
+    "Asia/Tokyo":          "Japan Time",
+    "Australia/Sydney":    "Sydney Time",
+    "UTC":                 "UTC",
+}
+
+
+def _friendly_tz(tz: str) -> str:
+    """IANA tz → human-friendly label for the AI to say out loud."""
+    return _TZ_FRIENDLY.get(tz, tz.split("/")[-1].replace("_", " "))
 
 
 def _default_system_prompt(tenant: TenantConfig) -> str:

@@ -358,10 +358,15 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                             business_hours_end=tenant.business_hours_end,
                             tenant_id=tenant.tenant_id,
                         )
+                        from app.prompts.system import _friendly_tz
+                        tz_label = _friendly_tz(tenant.business_hours_timezone or "America/Chicago")
                         if result.get("success"):
-                            return f"Appointment booked for {result['slot']}. Confirm with the caller."
+                            return (
+                                f"Appointment booked for {result['date']} at {result['slot']} {tz_label}. "
+                                f"Confirm to the caller using exactly this date+time+timezone."
+                            )
                         elif result.get("available_slots"):
-                            slots_str = ", ".join(s["start"] for s in result["available_slots"])
+                            slots_str = ", ".join(f"{s['label']} {tz_label}" for s in result["available_slots"])
                             return f"That time is not available. Available slots: {slots_str}. Ask the caller which they prefer."
                         return result.get("message", "Could not book. Ask caller to try another date.")
                     return f"Appointment noted for {args.get('preferred_date', '')} at {args.get('preferred_time', '')}. Calendar not configured yet."
