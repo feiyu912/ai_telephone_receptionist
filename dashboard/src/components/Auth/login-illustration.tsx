@@ -130,7 +130,7 @@ export function LoginIllustration({ className }: { className?: string }) {
           fill="white"
           fillOpacity="0.95"
         />
-        <circle cx="312" cy="308" r="14" fill="#FFA70B" fillOpacity="0.25" />
+        <circle cx="312" cy="308" r="14" fill="#F59E0B" fillOpacity="0.25" />
         <text
           x="312"
           y="313"

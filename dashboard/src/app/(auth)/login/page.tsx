@@ -14,7 +14,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -115,7 +115,7 @@ export default function LoginPage() {
         className="relative hidden overflow-hidden xl:block"
         style={{
           background:
-            "linear-gradient(135deg, #5750F1 0%, #4035C7 50%, #2D2880 100%)",
+            "linear-gradient(135deg, #5750F1 0%, #3C50E0 55%, #1C3FB7 100%)",
         }}
       >
         {/* decorative blobs */}
