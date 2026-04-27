@@ -328,7 +328,7 @@ export default function SettingsPage() {
             <div>
               <h3 className="font-medium">Twilio (own subaccount)</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Use your own Twilio subaccount for inbound signature validation and outbound SMS. Leave blank to share the platform account.
+                Used for inbound webhook signature validation, outbound SMS, and the browser test dialer. Leave any blank to share the platform account.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -347,6 +347,31 @@ export default function SettingsPage() {
                   placeholder={settings.twilio_auth_token_set ? "••••••••" : "paste token"}
                   value={String(settings.twilio_auth_token || "")}
                   onChange={(e) => update("twilio_auth_token", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>API Key SID</Label>
+                <Input
+                  placeholder="SK…"
+                  value={String(settings.twilio_api_key_sid || "")}
+                  onChange={(e) => update("twilio_api_key_sid", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>API Key Secret {settings.twilio_api_key_secret_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
+                <Input
+                  type="password"
+                  placeholder={settings.twilio_api_key_secret_set ? "••••••••" : "paste secret"}
+                  value={String(settings.twilio_api_key_secret || "")}
+                  onChange={(e) => update("twilio_api_key_secret", e.target.value)}
+                />
+              </div>
+              <div className="col-span-2">
+                <Label>TwiML App SID</Label>
+                <Input
+                  placeholder="AP…"
+                  value={String(settings.twilio_twiml_app_sid || "")}
+                  onChange={(e) => update("twilio_twiml_app_sid", e.target.value)}
                 />
               </div>
             </div>

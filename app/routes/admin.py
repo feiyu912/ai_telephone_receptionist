@@ -72,13 +72,20 @@ class SettingsUpdate(BaseModel):
     calendar_email: str | None = None
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
+    twilio_api_key_sid: str | None = None
+    twilio_api_key_secret: str | None = None
+    twilio_twiml_app_sid: str | None = None
     hubspot_access_token: str | None = None
 
 
 # Columns that must never leave the server as plaintext. GET replaces them
 # with a `<field>_set: bool` marker; PATCH accepts them but treats an empty
 # string as "no change" so an unedited dashboard form never wipes them.
-_SECRET_FIELDS = ("twilio_auth_token", "hubspot_access_token")
+_SECRET_FIELDS = (
+    "twilio_auth_token",
+    "twilio_api_key_secret",
+    "hubspot_access_token",
+)
 
 
 class FAQCreate(BaseModel):

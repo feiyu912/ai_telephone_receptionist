@@ -33,11 +33,14 @@ from dotenv import load_dotenv
 
 MIGRATION_SQL = """
 ALTER TABLE account_settings
-    ADD COLUMN IF NOT EXISTS sender_email          text,
-    ADD COLUMN IF NOT EXISTS calendar_email        text,
-    ADD COLUMN IF NOT EXISTS hubspot_access_token  text,
-    ADD COLUMN IF NOT EXISTS twilio_account_sid    text,
-    ADD COLUMN IF NOT EXISTS twilio_auth_token     text;
+    ADD COLUMN IF NOT EXISTS sender_email           text,
+    ADD COLUMN IF NOT EXISTS calendar_email         text,
+    ADD COLUMN IF NOT EXISTS hubspot_access_token   text,
+    ADD COLUMN IF NOT EXISTS twilio_account_sid     text,
+    ADD COLUMN IF NOT EXISTS twilio_auth_token      text,
+    ADD COLUMN IF NOT EXISTS twilio_api_key_sid     text,
+    ADD COLUMN IF NOT EXISTS twilio_api_key_secret  text,
+    ADD COLUMN IF NOT EXISTS twilio_twiml_app_sid   text;
 """
 
 

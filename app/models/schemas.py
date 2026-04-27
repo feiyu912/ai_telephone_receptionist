@@ -42,6 +42,10 @@ class TenantConfig(BaseModel):
     hubspot_access_token: str | None = None
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
+    # Browser Voice SDK access-token grants (per-tenant)
+    twilio_api_key_sid: str | None = None
+    twilio_api_key_secret: str | None = None
+    twilio_twiml_app_sid: str | None = None
 
 
 class CallerMemory(BaseModel):
