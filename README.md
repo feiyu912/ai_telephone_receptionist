@@ -17,7 +17,7 @@
 | CRM | HubSpot (contact + engagement note + meeting; per-tenant `hubspot_access_token` with a global env fallback) |
 | Calendar + Email | Microsoft Graph (per-tenant `calendar_email` / `sender_email` columns; falls back to the global `MS_CALENDAR_EMAIL` / `MS_SENDER_EMAIL` env vars when a tenant hasn't configured its own) |
 | Database | Supabase PostgreSQL (18 tables, 11 views, multi-tenant via `tenant_id`) |
-| Dashboard | Next.js 16 + React 19 + TailwindCSS + shadcn/ui |
+| Dashboard | Next.js 16 + React 19 + TailwindCSS v4 + NextAdmin/TailAdmin design tokens (`@theme`) + shadcn/ui primitives |
 | Reverse proxy | Nginx (Docker, SSL via Let's Encrypt) |
 | Deployment | Hostinger VPS (Docker Compose) |
 
@@ -135,26 +135,34 @@ Roles are stored on each user row in the `dashboard_users` Supabase table
 │   │   └── preview.py            # /voice/preview voice TTS sample
 │   └── prompts/system.py         # Dynamic system prompt builder
 │
-├── dashboard/                    # Next.js 16 admin dashboard
+├── dashboard/                    # Next.js 16 admin dashboard (NextAdmin design tokens)
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── (auth)/login/     # Login page
-│   │   │   ├── (dashboard)/      # Authenticated pages
-│   │   │   │   ├── overview/     # Per-tenant analytics
-│   │   │   │   ├── calls/        # Call history
-│   │   │   │   ├── customers/    # Customer list
-│   │   │   │   ├── faq/          # FAQ CRUD
-│   │   │   │   ├── settings/     # Tenant config (limited fields for client role)
-│   │   │   │   ├── integrations/ # Live OAuth status
-│   │   │   │   ├── tenants/      # Admin-only: All tenants overview
-│   │   │   │   └── system/       # Admin-only: System health
-│   │   │   └── layout.tsx        # Root layout (theme + auth)
-│   │   ├── components/           # UI components (sidebar, topbar, cards, etc.)
+│   │   │   ├── (auth)/login/                  # Split-layout login + SVG illustration
+│   │   │   ├── (dashboard)/                   # Authenticated pages
+│   │   │   │   ├── layout.tsx                 # SidebarProvider + TenantProvider
+│   │   │   │   ├── overview/                  # KPI cards + event pie chart
+│   │   │   │   ├── calls/                     # Call history table
+│   │   │   │   ├── customers/                 # Customer list table
+│   │   │   │   ├── faq/                       # FAQ CRUD
+│   │   │   │   ├── settings/                  # Tenant config (5 tabs)
+│   │   │   │   ├── integrations/              # Live OAuth status cards
+│   │   │   │   ├── tenants/                   # Admin: all tenants
+│   │   │   │   └── system/                    # Admin: system health
+│   │   │   ├── globals.css                    # NextAdmin @theme + shadcn token bridge
+│   │   │   └── layout.tsx                     # Root layout (theme + auth)
+│   │   ├── components/
+│   │   │   ├── Layouts/sidebar/               # Sidebar + nav data + context
+│   │   │   ├── Layouts/header/                # Sticky header (search/theme/bell/tenant/user)
+│   │   │   ├── Auth/login-illustration.tsx    # Inline SVG hero for login
+│   │   │   ├── dashboard/                     # OverviewCard + PanelCard + ErrorCard
+│   │   │   └── ui/                            # shadcn primitives + NextAdmin Dropdown
+│   │   ├── hooks/                             # use-mobile (useSyncExternalStore) + use-click-outside
 │   │   └── lib/
-│   │       ├── api.ts            # API client
-│   │       ├── auth.tsx          # Auth context (admin vs client role)
-│   │       └── tenant.tsx        # Tenant context (switcher for admin)
-│   └── Dockerfile                # Multi-stage Next.js standalone build
+│   │       ├── api.ts                         # API client (NEXT_PUBLIC_API_URL)
+│   │       ├── auth.tsx                       # Auth context (admin vs client role)
+│   │       └── tenant.tsx                     # Tenant context (switcher for admin)
+│   └── Dockerfile                             # Multi-stage Next.js standalone build
 │
 ├── deploy/                       # Hostinger VPS deployment
 │   ├── docker-compose.yml        # api + dashboard + nginx + certbot

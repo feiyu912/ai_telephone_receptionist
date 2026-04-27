@@ -71,22 +71,42 @@ nano .env
 Fill in all values. At minimum:
 
 ```
+# --- Database ---
 DATABASE_URL=postgresql+asyncpg://postgres.xxx:password@aws-0-us-west-2.pooler.supabase.com:5432/postgres
+
+# --- Voice / LLM ---
 OPENAI_API_KEY=sk-proj-...
 CARTESIA_API_KEY=sk_car_...
+
+# --- Twilio (platform fallback; per-tenant values override in Supabase) ---
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 TWILIO_API_KEY_SID=SK...
 TWILIO_API_KEY_SECRET=...
 TWILIO_TWIML_APP_SID=AP...
+
+# --- HubSpot (platform fallback; per-tenant `hubspot_access_token` overrides) ---
 HUBSPOT_ACCESS_TOKEN=pat-na2-...
+
+# --- Microsoft Graph (Outlook calendar + Mail.Send) ---
 MS_TENANT_ID=...
 MS_CLIENT_ID=...
 MS_CLIENT_SECRET=...
 MS_CALENDAR_EMAIL=ai-agent@your-domain.com
 MS_SENDER_EMAIL=ai-agent@your-domain.com
+
+# --- Server ---
 BASE_URL=https://api.your-domain.com
 LOG_LEVEL=info
+
+# --- Dashboard auth (required: dashboard cannot login without these) ---
+AUTH_SECRET=               # generate: python -c "import secrets; print(secrets.token_urlsafe(48))"
+COOKIE_SECURE=true         # always true on HTTPS
+COOKIE_SAMESITE=lax        # "lax" for same-site (Hostinger app + api on your-domain.com).
+                           # Use "none" only for cross-origin staging (e.g. localhost dashboard
+                           # talking to a Render API). "none" requires COOKIE_SECURE=true.
+DASHBOARD_URL=https://app.your-domain.com
+CORS_ORIGINS=https://app.your-domain.com
 ```
 
 Copy the `.env` into the `deploy/` folder too (docker-compose reads from there):

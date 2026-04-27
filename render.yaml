@@ -72,6 +72,10 @@ services:
         sync: false              # generate: python -c "import secrets; print(secrets.token_urlsafe(48))"
       - key: COOKIE_SECURE
         value: "true"
+      - key: COOKIE_SAMESITE
+        value: "none"            # "none" for cross-origin (localhost dashboard ↔ Render API).
+                                 # MUST be paired with COOKIE_SECURE=true. Hostinger prod uses
+                                 # "lax" because dashboard + API share your-domain.com.
       - key: DASHBOARD_URL
         sync: false              # set to wherever you'll run the dashboard, or leave empty for API-only testing
       - key: CORS_ORIGINS
