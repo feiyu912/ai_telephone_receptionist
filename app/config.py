@@ -1,6 +1,7 @@
 """Application configuration loaded from environment variables."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -45,6 +46,10 @@ class Settings(BaseSettings):
     log_level: str = "info"
     auth_secret: str = ""
     cookie_secure: bool = False
+    # "lax" works for same-site (api.example.com ↔ app.example.com share a domain
+    # cookie). For cross-origin (e.g. localhost dashboard ↔ Render API) browsers
+    # require "none" + secure=True or the cookie will be silently dropped.
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
