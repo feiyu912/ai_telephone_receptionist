@@ -24,3 +24,5 @@ export const getCustomers = (tid: string) => api(`/admin/customers/${tid}`);
 export const getCalls = (tid: string) => api(`/admin/calls/${tid}`);
 export const getAnalytics = (tid: string) => api(`/admin/analytics/${tid}`);
 export const getOAuthStatus = (tid: string) => api(`/oauth/status/${tid}`);
+export const getAIModels = (tier: string) => api(`/admin/models?tier=${encodeURIComponent(tier)}&category=realtime`);
+export const syncAIModels = () => api(`/admin/models/sync`, { method: "POST" });

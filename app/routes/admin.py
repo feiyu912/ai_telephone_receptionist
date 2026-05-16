@@ -54,6 +54,7 @@ class SettingsUpdate(BaseModel):
     after_hours_message: str | None = None
     voicemail_email: str | None = None
     selected_voice: str | None = None
+    selected_model: str | None = None
     tier: str | None = None
     business_hours_start: int | None = None
     business_hours_end: int | None = None
@@ -340,3 +341,111 @@ async def analytics_summary(
         "total_memory_facts": total_memories,
         "event_breakdown": [dict(r) for r in events.mappings().all()],
     }
+
+
+# ── AI Models (allowlist) ──────────────────────────────────────────
+
+@router.get("/models")
+async def list_ai_models(
+    tier: str = "starter",
+    category: str = "realtime",
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return enabled AI models for the given tier + category.
+
+    Used by the dashboard to populate the model dropdown.
+    """
+    result = await db.execute(
+        text("""
+            SELECT id, provider, model_id, display_name, category, tier,
+                   supports_audio_input, supports_audio_output, supports_reasoning,
+                   recommended, sort_order
+            FROM ai_models
+            WHERE category = :category AND enabled = true
+              AND (tier = :tier OR tier = 'starter')
+            ORDER BY sort_order, display_name
+        """),
+        {"tier": tier, "category": category},
+    )
+    return [dict(r) for r in result.mappings().all()]
+
+
+@router.post("/models/sync")
+async def sync_ai_models(
+    _user: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: sync available models from OpenAI and upsert into ai_models.
+
+    New models are inserted with enabled=false so they must be manually
+    reviewed and enabled before appearing in customer dashboards.
+    """
+    from openai import AsyncOpenAI
+    from app.config import get_settings
+
+    settings = get_settings()
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+    openai_models = await client.models.list()
+    realtime_ids = {m.id for m in openai_models.data if "realtime" in m.id}
+
+    # Known mapping of realtime model IDs to friendly names / tiers
+    KNOWN = {
+        "gpt-realtime-mini": {
+            "display_name": "GPT Realtime Mini",
+            "tier": "starter",
+            "recommended": True,
+            "sort_order": 1,
+        },
+        "gpt-realtime": {
+            "display_name": "GPT Realtime",
+            "tier": "growth",
+            "recommended": False,
+            "sort_order": 2,
+        },
+        "gpt-realtime-2": {
+            "display_name": "GPT Realtime 2",
+            "tier": "growth",
+            "recommended": False,
+            "sort_order": 3,
+        },
+    }
+
+    inserted = 0
+    for model_id in realtime_ids:
+        info = KNOWN.get(model_id, {
+            "display_name": model_id,
+            "tier": "growth",
+            "recommended": False,
+            "sort_order": 100,
+        })
+        result = await db.execute(
+            text("""
+                INSERT INTO ai_models
+                    (provider, model_id, display_name, category, tier,
+                     supports_audio_input, supports_audio_output,
+                     supports_text_input, supports_text_output,
+                     supports_reasoning, enabled, recommended, sort_order,
+                     created_at, updated_at)
+                VALUES
+                    ('openai', :model_id, :display_name, 'realtime', :tier,
+                     true, true, true, true,
+                     :supports_reasoning, false, :recommended, :sort_order,
+                     NOW(), NOW())
+                ON CONFLICT (provider, model_id) DO NOTHING
+            """),
+            {
+                "model_id": model_id,
+                "display_name": info["display_name"],
+                "tier": info["tier"],
+                "supports_reasoning": model_id == "gpt-realtime-2",
+                "recommended": info["recommended"],
+                "sort_order": info["sort_order"],
+            },
+        )
+        if result.rowcount:
+            inserted += 1
+
+    await db.commit()
+    return {"status": "synced", "inserted": inserted, "total_openai_realtime": len(realtime_ids)}

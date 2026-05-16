@@ -62,6 +62,7 @@ async def incoming_call(request: Request, db: AsyncSession = Depends(get_db)):
         tenant_id=tenant.tenant_id,
         tier=tenant.tier,
         selected_voice=tenant.selected_voice,
+        selected_model=tenant.selected_model,
     )
     await queries.create_voice_session(db, session)
 

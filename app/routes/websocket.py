@@ -116,7 +116,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
 
     # NOW connect to OpenAI — after we have tenant config
     async with websockets.connect(
-        "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini",
+        f"wss://api.openai.com/v1/realtime?model={tenant.selected_model or 'gpt-realtime-mini'}",
         additional_headers={
             "Authorization": f"Bearer {settings.openai_api_key}",
             "OpenAI-Beta": "realtime=v1",
@@ -147,7 +147,7 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                 "input_audio_format": "g711_ulaw",
                 "output_audio_format": "g711_ulaw",
                 "input_audio_transcription": {"model": "whisper-1"},
-                "voice": "alloy",
+                "voice": tenant.selected_voice or "alloy",
                 "instructions": system_prompt,
                 "modalities": ["text", "audio"],
                 "tools": [{"type": "function", **t["function"]} for t in VOICE_TOOLS],

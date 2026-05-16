@@ -194,10 +194,10 @@ async def create_voice_session(db: AsyncSession, session: VoiceSession) -> None:
     await db.execute(
         text("""
             INSERT INTO voice_sessions
-                (call_sid, caller_phone, called_number, tenant_id, tier, selected_voice,
+                (call_sid, caller_phone, called_number, tenant_id, tier, selected_voice, selected_model,
                  conversation_history, session_metadata, status, started_at, last_activity_at, created_at)
             VALUES
-                (:call_sid, :caller_phone, :called_number, :tid, :tier, :voice,
+                (:call_sid, :caller_phone, :called_number, :tid, :tier, :voice, :model,
                  CAST(:history AS jsonb), CAST(:metadata AS jsonb), 'active', NOW(), NOW(), NOW())
             ON CONFLICT (call_sid) DO NOTHING
         """),
@@ -208,6 +208,7 @@ async def create_voice_session(db: AsyncSession, session: VoiceSession) -> None:
             "tid": session.tenant_id,
             "tier": session.tier,
             "voice": session.selected_voice,
+            "model": session.selected_model,
             "history": json.dumps(session.conversation_history),
             "metadata": json.dumps(session.session_metadata),
         },

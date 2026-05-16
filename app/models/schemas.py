@@ -12,6 +12,7 @@ class TenantConfig(BaseModel):
     company_name: str | None = None
     tier: str = "starter"
     selected_voice: str = "Polly.Matthew-Neural"
+    selected_model: str = "gpt-realtime-mini"
     system_prompt: str | None = None
     system_prompt_growth: str | None = None
     greeting_new: str | None = None
@@ -62,6 +63,7 @@ class VoiceSession(BaseModel):
     customer_id: str | None = None
     tier: str = "starter"
     selected_voice: str = "Polly.Matthew-Neural"
+    selected_model: str = "gpt-realtime-mini"
     conversation_history: list[dict] = Field(default_factory=list)
     session_metadata: dict = Field(default_factory=dict)
     status: str = "active"

@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { PageSpinner } from "@/components/dashboard/loading";
-import { API_BASE, getOAuthStatus, getTenantSettings, updateTenantSettings } from "@/lib/api";
+import { API_BASE, getAIModels, getOAuthStatus, getTenantSettings, updateTenantSettings } from "@/lib/api";
 import { useTenantId, useTenant } from "@/lib/tenant";
 
 interface OAuthStatus {
@@ -19,14 +19,41 @@ interface OAuthStatus {
   hubspot?: { connected: boolean; updated_at?: string };
 }
 
+interface AIModel {
+  id: string;
+  model_id: string;
+  display_name: string;
+  recommended: boolean;
+}
+
+const REALTIME_VOICES = [
+  { value: "alloy", label: "Alloy" },
+  { value: "ash", label: "Ash" },
+  { value: "ballad", label: "Ballad" },
+  { value: "coral", label: "Coral" },
+  { value: "echo", label: "Echo" },
+  { value: "sage", label: "Sage" },
+  { value: "shimmer", label: "Shimmer" },
+  { value: "verse", label: "Verse" },
+  { value: "marin", label: "Marin (recommended)" },
+  { value: "cedar", label: "Cedar (recommended)" },
+];
+
+const STARTER_VOICES = [
+  { value: "Polly.Joanna-Neural", label: "Polly Joanna" },
+  { value: "Polly.Matthew-Neural", label: "Polly Matthew" },
+];
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
-  const [oauthStatus, setOauthStatus] = useState<OAuthStatus>({});
+  const [oauthStatus, setOAuthStatus] = useState<OAuthStatus>({});
+  const [aiModels, setAiModels] = useState<AIModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const tenantId = useTenantId();
   const { isAdmin } = useTenant();
+  const tier = String(settings?.tier || "starter");
 
   useEffect(() => {
     if (!tenantId) return;
@@ -37,7 +64,15 @@ export default function SettingsPage() {
     ])
       .then(([s, o]) => {
         setSettings(s);
-        setOauthStatus(o);
+        setOAuthStatus(o);
+        const tierVal = String(s?.tier || "starter");
+        if (tierVal !== "starter") {
+          getAIModels(tierVal)
+            .then((m) => setAiModels(Array.isArray(m) ? m : []))
+            .catch(() => setAiModels([]));
+        } else {
+          setAiModels([]);
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -68,6 +103,8 @@ export default function SettingsPage() {
   };
 
   if (loading || !settings) return <PageSpinner />;
+
+  const voiceOptions = tier === "starter" ? STARTER_VOICES : REALTIME_VOICES;
 
   return (
     <div className="space-y-6">
@@ -152,22 +189,50 @@ export default function SettingsPage() {
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">AI Voice</h3>
             <Select
-              value={String(settings.selected_voice || "Polly.Joanna-Neural")}
+              value={String(settings.selected_voice || (tier === "starter" ? "Polly.Joanna-Neural" : "alloy"))}
               onValueChange={(v) => update("selected_voice", v)}
             >
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-64">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="alloy">Alloy (Realtime)</SelectItem>
-                <SelectItem value="echo">Echo (Realtime)</SelectItem>
-                <SelectItem value="nova">Nova (Realtime)</SelectItem>
-                <SelectItem value="shimmer">Shimmer (Realtime)</SelectItem>
-                <SelectItem value="Polly.Joanna-Neural">Polly Joanna (Starter)</SelectItem>
-                <SelectItem value="Polly.Matthew-Neural">Polly Matthew (Starter)</SelectItem>
+                {voiceOptions.map((v) => (
+                  <SelectItem key={v.value} value={v.value}>
+                    {v.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <p className="text-sm text-muted-foreground">
+              {tier === "starter"
+                ? "Starter tier uses Amazon Polly voices via Twilio."
+                : "Growth/Pro tiers use OpenAI Realtime built-in voices."}
+            </p>
           </Card>
+
+          {tier !== "starter" && (
+            <Card className="p-6 space-y-4">
+              <h3 className="font-medium">Realtime Model</h3>
+              <Select
+                value={String(settings.selected_model || "gpt-realtime-mini")}
+                onValueChange={(v) => update("selected_model", v)}
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aiModels.map((m) => (
+                    <SelectItem key={m.model_id} value={m.model_id}>
+                      {m.display_name} {m.recommended ? "(recommended)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                The OpenAI Realtime model used for calls. New models can be synced from the admin panel.
+              </p>
+            </Card>
+          )}
 
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">Greetings</h3>
