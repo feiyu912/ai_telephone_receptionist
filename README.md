@@ -367,11 +367,14 @@ For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 
 ### Phase 2 — Planned
 
-- [ ] Production auth (replace hardcoded demo users with Supabase Auth or similar)
-- [ ] GitHub Actions auto-deploy on push to `main`
-- [ ] Booking time-parsing improvements (`dateparser` for "next Tuesday")
-- [ ] Booking timezone fix (Microsoft Graph returns UTC, must not be naively replaced)
-- [ ] Per-tenant OAuth tokens (HubSpot + Outlook tied to each client's account)
+- [x] Production auth (cookie-based session login, role-based access)
+- [x] GitHub Actions auto-deploy on push to `main`
+- [x] Booking time-parsing improvements (`dateparser` for "next Tuesday")
+- [x] Booking timezone fix (Microsoft Graph returns UTC, treated as schedule timezone)
+- [x] Per-tenant OAuth tokens (HubSpot + Outlook tied to each client's account)
+- [x] Industry playbooks (HVAC, dental, legal, plumbing)
+- [x] Call recording with compliance disclosure
+- [x] Admin alerts (new lead, booking, voicemail, usage threshold)
 - [ ] Stripe billing + minute usage tracking
 - [ ] Admin alerts (new lead, booking, voicemail, usage threshold)
 - [ ] Industry playbooks (HVAC, dental, legal, plumbing)
