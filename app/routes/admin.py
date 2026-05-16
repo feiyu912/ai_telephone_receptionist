@@ -379,7 +379,7 @@ async def analytics_summary(
 async def list_ai_models(
     tier: str = "starter",
     category: str = "realtime",
-    _user: AuthUser = Depends(require_tenant_access),
+    _user: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Return enabled AI models for the given tier + category.
@@ -525,7 +525,7 @@ async def sync_ai_models(
 
 @router.get("/playbooks")
 async def list_playbooks(
-    _user: AuthUser = Depends(require_tenant_access),
+    _user: AuthUser = Depends(require_admin),
 ):
     """Return available industry playbooks."""
     from app.services.playbooks import PLAYBOOKS
