@@ -245,7 +245,7 @@ export default function SettingsPage() {
             <p className="text-sm text-muted-foreground">
               When enabled, calls are recorded on Twilio and a compliance disclosure is played before the greeting.
             </p>
-            {settings.call_recording_enabled && (
+            {Boolean(settings.call_recording_enabled) && (
               <div>
                 <Label>Disclosure Message</Label>
                 <Textarea
