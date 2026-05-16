@@ -294,7 +294,7 @@ export default function SettingsPage() {
                 value={String(settings.selected_model || "gpt-realtime-mini")}
                 onValueChange={(v) => update("selected_model", v)}
               >
-                <SelectTrigger className="w-64">
+                <SelectTrigger className="w-80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -305,6 +305,9 @@ export default function SettingsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Loaded {aiModels.length} model(s).
+              </p>
               <p className="text-sm text-muted-foreground">
                 The OpenAI Realtime model used for calls. New models can be synced from the admin panel.
               </p>
