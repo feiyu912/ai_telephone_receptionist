@@ -418,13 +418,10 @@ async def sync_ai_models(
     from openai import AsyncOpenAI
     from app.config import get_settings
 
-    settings = get_settings()
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
-
-    openai_models = await client.models.list()
-    realtime_ids = {m.id for m in openai_models.data if "realtime" in m.id}
-
-    # Known mapping of realtime model IDs to friendly names / tiers
+    # Known mapping of realtime model IDs to friendly names / tiers.
+    # OpenAI's models.list() does NOT reliably return realtime models,
+    # so we seed/upsert the known ones directly and still scan the API
+    # for any future unknown models.
     KNOWN = {
         "gpt-realtime-mini": {
             "display_name": "GPT Realtime Mini",
@@ -447,17 +444,9 @@ async def sync_ai_models(
     }
 
     inserted = 0
-    for model_id in realtime_ids:
-        is_known = model_id in KNOWN
-        info = KNOWN.get(model_id, {
-            "display_name": model_id,
-            "tier": "growth",
-            "recommended": False,
-            "sort_order": 100,
-        })
-        # Known models are enabled by default; unknown future models stay disabled
-        # until an admin reviews them.
-        enabled_default = is_known
+
+    # 1. Upsert KNOWN models (enabled by default)
+    for model_id, info in KNOWN.items():
         result = await db.execute(
             text("""
                 INSERT INTO ai_models
@@ -469,18 +458,59 @@ async def sync_ai_models(
                 VALUES
                     ('openai', :model_id, :display_name, 'realtime', :tier,
                      true, true, true, true,
-                     :supports_reasoning, :enabled, :recommended, :sort_order,
+                     :supports_reasoning, true, :recommended, :sort_order,
                      NOW(), NOW())
-                ON CONFLICT (provider, model_id) DO NOTHING
+                ON CONFLICT (provider, model_id) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    tier = EXCLUDED.tier,
+                    recommended = EXCLUDED.recommended,
+                    sort_order = EXCLUDED.sort_order,
+                    updated_at = NOW()
             """),
             {
                 "model_id": model_id,
                 "display_name": info["display_name"],
                 "tier": info["tier"],
                 "supports_reasoning": model_id == "gpt-realtime-2",
-                "enabled": enabled_default,
                 "recommended": info["recommended"],
                 "sort_order": info["sort_order"],
+            },
+        )
+        if result.rowcount:
+            inserted += 1
+
+    # 2. Also scan OpenAI API for any unknown future realtime models
+    settings = get_settings()
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    try:
+        openai_models = await client.models.list()
+        realtime_ids = {m.id for m in openai_models.data if "realtime" in m.id}
+    except Exception:
+        realtime_ids = set()
+
+    for model_id in realtime_ids:
+        if model_id in KNOWN:
+            continue  # already handled above
+        result = await db.execute(
+            text("""
+                INSERT INTO ai_models
+                    (provider, model_id, display_name, category, tier,
+                     supports_audio_input, supports_audio_output,
+                     supports_text_input, supports_text_output,
+                     supports_reasoning, enabled, recommended, sort_order,
+                     created_at, updated_at)
+                VALUES
+                    ('openai', :model_id, :display_name, 'realtime', :tier,
+                     true, true, true, true,
+                     :supports_reasoning, false, false, 100,
+                     NOW(), NOW())
+                ON CONFLICT (provider, model_id) DO NOTHING
+            """),
+            {
+                "model_id": model_id,
+                "display_name": model_id,
+                "tier": "growth",
+                "supports_reasoning": False,
             },
         )
         if result.rowcount:
