@@ -235,6 +235,30 @@ export default function SettingsPage() {
           )}
 
           <Card className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium">Call Recording</h3>
+              <Switch
+                checked={Boolean(settings.call_recording_enabled)}
+                onCheckedChange={(v) => update("call_recording_enabled", v)}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              When enabled, calls are recorded on Twilio and a compliance disclosure is played before the greeting.
+            </p>
+            {settings.call_recording_enabled && (
+              <div>
+                <Label>Disclosure Message</Label>
+                <Textarea
+                  value={String(settings.recording_disclosure_message || "")}
+                  onChange={(e) => update("recording_disclosure_message", e.target.value)}
+                  rows={2}
+                  placeholder="This call may be recorded for quality assurance purposes."
+                />
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-6 space-y-4">
             <h3 className="font-medium">Greetings</h3>
             <div>
               <Label>New Caller Greeting</Label>

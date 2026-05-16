@@ -64,6 +64,7 @@
 - **Function calling** — 7 tools: `end_call`, `transfer_to_human`, `book_appointment`, `save_caller_memory`, `set_memory_consent`, `forget_caller`, `verify_identity`
 - **Live transfer** — Growth/Pro calls hand off via Twilio REST API redirect to a hunt-group `<Dial>` TwiML; Starter calls return the TwiML inline
 - **End call hangup** — when AI calls `end_call`, the call automatically terminates after the farewell
+- **Call recording with compliance disclosure** — per-tenant toggle in Settings; when enabled, Twilio records the call and a customizable disclosure message is played before the greeting
 - **Email captured during calls** — confirmation SMS sent post-call so caller can correct typos
 - **Booking info collection via SMS** — if a caller wants to book but doesn't provide name/email during the call, the system sends an SMS asking for the missing info, parses the reply, and automatically creates the Outlook Calendar event + HubSpot meeting
 - **Post-call processing** — GPT fact extraction → customer upsert → HubSpot sync → optional SMS/email follow-up

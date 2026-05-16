@@ -513,9 +513,16 @@ def _starter_route(
             "How can I help you today?"
         )
 
+    disclosure = ""
+    if tenant.call_recording_enabled:
+        msg = tenant.recording_disclosure_message or "This call may be recorded for quality assurance purposes."
+        disclosure = f'<Say voice="{tenant.selected_voice}">{_xml_escape(msg)}</Say>'
+
     settings = get_settings()
     return _twiml_response(
-        f'<Response><Gather input="speech" timeout="5" speechTimeout="auto" '
+        f'<Response>'
+        f'{disclosure}'
+        f'<Gather input="speech" timeout="5" speechTimeout="auto" '
         f'action="{settings.base_url}/voice/starter-gather">'
         f'<Say voice="{tenant.selected_voice}">{_xml_escape(greeting)}</Say>'
         f'</Gather></Response>'
@@ -529,8 +536,14 @@ def _websocket_route(
     settings = get_settings()
     ws_url = settings.base_url.replace("https://", "wss://").replace("http://", "ws://")
 
+    disclosure = ""
+    if tenant.call_recording_enabled:
+        msg = tenant.recording_disclosure_message or "This call may be recorded for quality assurance purposes."
+        disclosure = f'<Say voice="{tenant.selected_voice}">{_xml_escape(msg)}</Say>'
+
     return _twiml_response(
         f'<Response>'
+        f'{disclosure}'
         f'<Connect>'
         f'<Stream url="{ws_url}/ws/media-stream/{call_sid}">'
         f'<Parameter name="tenant_id" value="{tenant.tenant_id}"/>'

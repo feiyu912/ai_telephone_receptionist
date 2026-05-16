@@ -77,6 +77,8 @@ class SettingsUpdate(BaseModel):
     twilio_api_key_secret: str | None = None
     twilio_twiml_app_sid: str | None = None
     hubspot_access_token: str | None = None
+    call_recording_enabled: bool | None = None
+    recording_disclosure_message: str | None = None
 
 
 # Columns that must never leave the server as plaintext. GET replaces them
@@ -162,6 +164,26 @@ async def update_settings(
         params,
     )
     await db.commit()
+
+    # Sync Twilio phone number recording when the toggle changes
+    if "call_recording_enabled" in fields:
+        import asyncio
+        from app.services.recording import update_phone_recording
+
+        tenant_row = await db.execute(
+            text("SELECT phone_number, twilio_account_sid, twilio_auth_token FROM account_settings WHERE tenant_id = :tid"),
+            {"tid": tenant_id},
+        )
+        row = tenant_row.mappings().first()
+        if row:
+            await asyncio.to_thread(
+                update_phone_recording,
+                phone_number=row["phone_number"],
+                enabled=bool(fields["call_recording_enabled"]),
+                account_sid=row["twilio_account_sid"] or None,
+                auth_token=row["twilio_auth_token"] or None,
+            )
+
     return {"status": "updated", "fields": list(fields.keys())}
 
 

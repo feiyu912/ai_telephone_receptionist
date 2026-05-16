@@ -34,6 +34,8 @@ class TenantConfig(BaseModel):
     memory_expiry_days: int = 90
     memory_consent_required: bool = True
     pii_verification_required: bool = True
+    call_recording_enabled: bool = False
+    recording_disclosure_message: str = "This call may be recorded for quality assurance purposes."
     webhook_base_url: str | None = None
     is_active: bool = True
     # Per-tenant integration credentials (nullable; None → fall back to
