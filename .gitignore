@@ -5,6 +5,7 @@
 
 # n8n workflows (contain credential references)
 workflows/
+!.github/workflows/
 
 # Tenant source documents (provided by clients, not for the repo)
 faqs/
