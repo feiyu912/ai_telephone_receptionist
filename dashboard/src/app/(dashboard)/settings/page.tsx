@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { PageSpinner } from "@/components/dashboard/loading";
-import { API_BASE, getAIModels, getOAuthStatus, getTenantSettings, updateTenantSettings } from "@/lib/api";
+import { API_BASE, getAIModels, getOAuthStatus, getTenantSettings, updateTenantSettings, getPlaybooks, applyPlaybook } from "@/lib/api";
 import { useTenantId, useTenant } from "@/lib/tenant";
 
 interface OAuthStatus {
@@ -48,6 +48,8 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [oauthStatus, setOAuthStatus] = useState<OAuthStatus>({});
   const [aiModels, setAiModels] = useState<AIModel[]>([]);
+  const [playbooks, setPlaybooks] = useState<{ name: string; slug: string }[]>([]);
+  const [applyingPlaybook, setApplyingPlaybook] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -73,6 +75,9 @@ export default function SettingsPage() {
         } else {
           setAiModels([]);
         }
+        getPlaybooks()
+          .then((p) => setPlaybooks(Array.isArray(p) ? p : []))
+          .catch(() => setPlaybooks([]));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -99,6 +104,22 @@ export default function SettingsPage() {
       console.error("Failed to save:", err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleApplyPlaybook = async (slug: string) => {
+    if (!tenantId || !slug) return;
+    setApplyingPlaybook(true);
+    try {
+      await applyPlaybook(tenantId, slug);
+      const s = await getTenantSettings(tenantId);
+      setSettings(s);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error("Apply playbook failed:", err);
+    } finally {
+      setApplyingPlaybook(false);
     }
   };
 
@@ -175,6 +196,34 @@ export default function SettingsPage() {
               </p>
             </Card>
           )}
+
+          <Card className="p-6 space-y-4">
+            <h3 className="font-medium">Industry Playbook</h3>
+            <div className="flex items-center gap-4">
+              <Select
+                value={String(settings.industry_playbook || "")}
+                onValueChange={(v) => {
+                  if (v) handleApplyPlaybook(v);
+                }}
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select an industry playbook..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {playbooks.map((pb) => (
+                    <SelectItem key={pb.slug} value={pb.slug}>
+                      {pb.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {applyingPlaybook && <Loader2 className="w-4 h-4 animate-spin" />}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Applying a playbook overwrites the system prompt and greetings, and adds industry-specific FAQs.
+              Current: <strong>{String(settings.industry_playbook || "None")}</strong>
+            </p>
+          </Card>
 
           <div className="flex justify-end gap-2">
             {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}

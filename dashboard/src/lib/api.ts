@@ -26,3 +26,6 @@ export const getAnalytics = (tid: string) => api(`/admin/analytics/${tid}`);
 export const getOAuthStatus = (tid: string) => api(`/oauth/status/${tid}`);
 export const getAIModels = (tier: string) => api(`/admin/models?tier=${encodeURIComponent(tier)}&category=realtime`);
 export const syncAIModels = () => api(`/admin/models/sync`, { method: "POST" });
+export const getPlaybooks = () => api(`/admin/playbooks`);
+export const applyPlaybook = (tid: string, slug: string) =>
+  api(`/admin/playbooks/${tid}/apply`, { method: "POST", body: JSON.stringify({ slug }) });

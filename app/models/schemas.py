@@ -36,6 +36,7 @@ class TenantConfig(BaseModel):
     pii_verification_required: bool = True
     call_recording_enabled: bool = False
     recording_disclosure_message: str = "This call may be recorded for quality assurance purposes."
+    industry_playbook: str | None = None
     webhook_base_url: str | None = None
     is_active: bool = True
     # Per-tenant integration credentials (nullable; None → fall back to

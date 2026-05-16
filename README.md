@@ -60,6 +60,7 @@
 - **Barge-in** — caller can interrupt mid-sentence (built into Realtime API)
 - **Caller memory** — long-term facts with privacy tiers (safe/protected) + 90-day expiry + GDPR forget-me
 - **Identity verification** — protected memory (email, full name, etc.) is locked behind a `verify_identity` tool that requires the caller to confirm BOTH name AND email; only on success does the AI get to reference stored details
+- **Industry playbooks** — one-click HVAC, dental, legal, and plumbing templates that overwrite the system prompt, greetings, and bulk-insert preset FAQs
 - **FAQ matching** — Dice bigram similarity + FAQ context injected into Realtime system prompt
 - **Function calling** — 7 tools: `end_call`, `transfer_to_human`, `book_appointment`, `save_caller_memory`, `set_memory_consent`, `forget_caller`, `verify_identity`
 - **Live transfer** — Growth/Pro calls hand off via Twilio REST API redirect to a hunt-group `<Dial>` TwiML; Starter calls return the TwiML inline

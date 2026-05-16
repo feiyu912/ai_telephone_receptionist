@@ -475,3 +475,36 @@ async def sync_ai_models(
 
     await db.commit()
     return {"status": "synced", "inserted": inserted, "total_openai_realtime": len(realtime_ids)}
+
+
+# ── Industry Playbooks ───────────────────────────────────────────────
+
+@router.get("/playbooks")
+async def list_playbooks(
+    _user: AuthUser = Depends(require_tenant_access),
+):
+    """Return available industry playbooks."""
+    from app.services.playbooks import PLAYBOOKS
+    return [
+        {"name": pb.name, "slug": pb.slug}
+        for pb in PLAYBOOKS.values()
+    ]
+
+
+@router.post("/playbooks/{tenant_id}/apply")
+async def apply_playbook_endpoint(
+    tenant_id: str,
+    body: dict,
+    _user: AuthUser = Depends(require_tenant_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply an industry playbook to a tenant."""
+    from app.services.playbooks import apply_playbook
+    slug = body.get("slug", "")
+    if not slug:
+        raise HTTPException(status_code=400, detail="Missing slug")
+    try:
+        result = await apply_playbook(db, tenant_id, slug)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
