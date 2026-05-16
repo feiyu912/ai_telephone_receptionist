@@ -171,7 +171,7 @@ In the Twilio Console, update both phone numbers + the TwiML App:
 
 ## 8. Ongoing Operations
 
-### Deploying updates
+### Deploying updates (manual)
 
 Push code to GitHub, then on the VPS:
 
@@ -182,7 +182,33 @@ cd deploy
 docker compose up -d --build
 ```
 
-Auto-deploy (GitHub Actions → SSH + docker compose up) can be added later.
+### Auto-deploy via GitHub Actions (recommended)
+
+The repo includes `.github/workflows/deploy.yml`. To enable push-to-deploy:
+
+1. **Generate a GitHub Personal Access Token** (classic) with `repo` scope:
+   - GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Generate new token → select `repo` scope
+   - Copy the token (starts with `ghp_`)
+
+2. **Add GitHub Secrets** to this repo:
+   - Go to repo → Settings → Secrets and variables → Actions → New repository secret
+   - Add these secrets:
+
+   | Secret | Value |
+   |---|---|
+   | `HOSTINGER_HOST` | Your VPS IP address (e.g. `192.168.1.1`) |
+   | `HOSTINGER_USER` | SSH username (e.g. `root` or `vozalta`) |
+   | `HOSTINGER_SSH_KEY` | The **private** key content for SSH access to the VPS |
+   | `GH_PAT` | The GitHub Personal Access Token from step 1 |
+
+3. **Ensure the VPS accepts the SSH key** used in `HOSTINGER_SSH_KEY`.
+
+4. **Test it:** push any commit to `main` and watch the Actions tab. The workflow will:
+   - SSH into the VPS
+   - `git pull origin main` (using the PAT for authentication)
+   - `docker compose up -d --build`
+   - Run a health check on `https://api.your-domain.com/health`
 
 ### Renewing SSL certificates
 
