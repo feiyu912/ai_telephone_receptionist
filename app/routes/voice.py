@@ -7,6 +7,7 @@ Handles tier-based routing:
 
 from __future__ import annotations
 import logging
+from datetime import datetime
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy import text
@@ -336,8 +337,45 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 access_token=tenant.hubspot_access_token if tenant else None,
             )
 
+            # Booking info collection: if caller wants to book but missing name/email
+            missing_fields = sms_action.get("missing_fields", [])
+            booking_info_sent = False
+            if (
+                sms_action.get("needs_calendar")
+                and sms_action.get("has_specific_time")
+                and missing_fields
+                and tenant
+                and not phone.startswith("client:")
+            ):
+                from app.services.booking_collect import request_booking_info
+                meeting_dt = sms_action.get("meeting_datetime", "")
+                proposed_date = ""
+                proposed_time = ""
+                if meeting_dt:
+                    try:
+                        dt = datetime.fromisoformat(meeting_dt.replace("Z", "+00:00"))
+                        proposed_date = dt.strftime("%Y-%m-%d")
+                        proposed_time = dt.strftime("%H:%M")
+                    except ValueError:
+                        pass
+                booking_info_sent = await request_booking_info(
+                    db=db,
+                    tenant_id=str(tenant_id),
+                    caller_phone=phone,
+                    from_phone=tenant.phone_number,
+                    missing_fields=missing_fields,
+                    proposed_date=proposed_date or sms_action.get("meeting_datetime", ""),
+                    proposed_time=proposed_time or "",
+                    purpose=sms_action.get("calendar_subject", "Consultation"),
+                    duration_minutes=sms_action.get("meeting_duration_minutes", 30),
+                    session_id=call_sid,
+                    company_name=tenant.company_name or "",
+                    twilio_account_sid=tenant.twilio_account_sid,
+                    twilio_auth_token=tenant.twilio_auth_token,
+                )
+
             # SMS follow-up (skip browser callers, check opt-out)
-            if sms_action.get("needs_sms") and tenant and not phone.startswith("client:"):
+            if sms_action.get("needs_sms") and tenant and not phone.startswith("client:") and not booking_info_sent:
                 opt_out = await db.execute(
                     text("SELECT 1 FROM opt_outs WHERE phone = :phone AND tenant_id = :tid"),
                     {"phone": phone, "tid": tenant_id},

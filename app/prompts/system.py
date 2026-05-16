@@ -149,6 +149,7 @@ Return ONLY valid JSON:
   "needs_sms": true/false,
   "needs_calendar": true/false,
   "has_specific_time": true/false,
+  "missing_fields": ["name", "email"],
   "meeting_datetime": "ISO 8601 datetime or empty string",
   "meeting_duration_minutes": 30,
   "sms_type": "booking/summary/custom/none",
@@ -169,6 +170,7 @@ Rules for Calendar:
 - has_specific_time = false if they just said "I want to meet" without a specific time
 - meeting_datetime: ISO 8601 format if has_specific_time is true, else empty string
 - meeting_duration_minutes: default 30 unless caller specified otherwise
+- missing_fields: array of missing booking fields. Include "name" if caller did not provide their name. Include "email" if caller did not provide an email. Empty array if both were provided. Only relevant when needs_calendar is true.
 
 Rules for sms_body (max 320 chars):
 - If has_specific_time: "Hi [name]! Your meeting is confirmed for [date/time]. We look forward to speaking with you!"

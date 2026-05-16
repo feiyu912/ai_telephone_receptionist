@@ -108,6 +108,12 @@ async def sms_inbound(request: Request, db: AsyncSession = Depends(get_db)):
     if confirm_reply:
         return _twiml_reply(confirm_reply)
 
+    # Booking info collection flow: if caller has a pending booking info request
+    from app.services.booking_collect import handle_booking_info_reply
+    booking_reply = await handle_booking_info_reply(db, tenant.tenant_id, from_number, body)
+    if booking_reply:
+        return _twiml_reply(booking_reply)
+
     # Load caller memory
     memories = await queries.lookup_caller_memory(db, tenant.tenant_id, from_number)
     is_returning = len(memories) > 0
