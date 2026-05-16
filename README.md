@@ -16,7 +16,7 @@
 | Function calling | OpenAI tools (6 functions) |
 | CRM | HubSpot (contact + engagement note + meeting; per-tenant `hubspot_access_token` with a global env fallback) |
 | Calendar + Email | Microsoft Graph (per-tenant `calendar_email` / `sender_email` columns; falls back to the global `MS_CALENDAR_EMAIL` / `MS_SENDER_EMAIL` env vars when a tenant hasn't configured its own) |
-| Database | Supabase PostgreSQL (18 tables, 11 views, multi-tenant via `tenant_id`) |
+| Database | Supabase PostgreSQL (19 tables, 11 views, multi-tenant via `tenant_id`) |
 | Dashboard | Next.js 16 + React 19 + TailwindCSS v4 + NextAdmin/TailAdmin design tokens (`@theme`) + shadcn/ui primitives |
 | Reverse proxy | Nginx (Docker, SSL via Let's Encrypt) |
 | Deployment | Hostinger VPS (Docker Compose) |
@@ -65,6 +65,7 @@
 - **Live transfer** — Growth/Pro calls hand off via Twilio REST API redirect to a hunt-group `<Dial>` TwiML; Starter calls return the TwiML inline
 - **End call hangup** — when AI calls `end_call`, the call automatically terminates after the farewell
 - **Email captured during calls** — confirmation SMS sent post-call so caller can correct typos
+- **Booking info collection via SMS** — if a caller wants to book but doesn't provide name/email during the call, the system sends an SMS asking for the missing info, parses the reply, and automatically creates the Outlook Calendar event + HubSpot meeting
 - **Post-call processing** — GPT fact extraction → customer upsert → HubSpot sync → optional SMS/email follow-up
 - **Hunt group transfer** — sequential dial to configured numbers
 - **24/7 operation** — no business hours restriction
@@ -120,6 +121,7 @@ Roles are stored on each user row in the `dashboard_users` Supabase table
 │   │   ├── calendar.py           # Outlook Calendar (Microsoft Graph)
 │   │   ├── email.py              # Outlook email (Microsoft Graph)
 │   │   ├── email_confirm.py      # SMS-based email spelling confirmation
+│   │   ├── booking_collect.py    # SMS-based booking info collection (name/email)
 │   │   ├── faq.py                # FAQ bigram matching
 │   │   ├── pii.py                # PII masking
 │   │   ├── business_hours.py     # Timezone-aware hours check
@@ -355,6 +357,7 @@ For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 - [x] Microsoft Graph email (voicemail alerts, follow-up, booking confirmation)
 - [x] Outlook Calendar booking via Microsoft Graph
 - [x] Email confirmation SMS flow (post-call typo correction)
+- [x] Booking info collection via SMS (missing name/email → auto-create calendar event + HubSpot meeting)
 - [x] Memory cleanup cron (90-day expiry + forget-me)
 - [x] Admin API + multi-tenant dashboard
 - [x] Hostinger VPS deployment (Docker, nginx, Let's Encrypt)
