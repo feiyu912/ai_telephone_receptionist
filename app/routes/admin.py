@@ -463,6 +463,7 @@ async def sync_ai_models(
                 ON CONFLICT (provider, model_id) DO UPDATE SET
                     display_name = EXCLUDED.display_name,
                     tier = EXCLUDED.tier,
+                    enabled = true,
                     recommended = EXCLUDED.recommended,
                     sort_order = EXCLUDED.sort_order,
                     updated_at = NOW()
