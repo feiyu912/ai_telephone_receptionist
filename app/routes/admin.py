@@ -448,12 +448,16 @@ async def sync_ai_models(
 
     inserted = 0
     for model_id in realtime_ids:
+        is_known = model_id in KNOWN
         info = KNOWN.get(model_id, {
             "display_name": model_id,
             "tier": "growth",
             "recommended": False,
             "sort_order": 100,
         })
+        # Known models are enabled by default; unknown future models stay disabled
+        # until an admin reviews them.
+        enabled_default = is_known
         result = await db.execute(
             text("""
                 INSERT INTO ai_models
@@ -465,7 +469,7 @@ async def sync_ai_models(
                 VALUES
                     ('openai', :model_id, :display_name, 'realtime', :tier,
                      true, true, true, true,
-                     :supports_reasoning, false, :recommended, :sort_order,
+                     :supports_reasoning, :enabled, :recommended, :sort_order,
                      NOW(), NOW())
                 ON CONFLICT (provider, model_id) DO NOTHING
             """),
@@ -474,6 +478,7 @@ async def sync_ai_models(
                 "display_name": info["display_name"],
                 "tier": info["tier"],
                 "supports_reasoning": model_id == "gpt-realtime-2",
+                "enabled": enabled_default,
                 "recommended": info["recommended"],
                 "sort_order": info["sort_order"],
             },

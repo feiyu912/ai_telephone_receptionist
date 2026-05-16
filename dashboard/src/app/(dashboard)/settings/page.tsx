@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { PageSpinner } from "@/components/dashboard/loading";
-import { API_BASE, getAIModels, getOAuthStatus, getTenantSettings, updateTenantSettings, getPlaybooks, applyPlaybook } from "@/lib/api";
+import { API_BASE, getAIModels, syncAIModels, getOAuthStatus, getTenantSettings, updateTenantSettings, getPlaybooks, applyPlaybook } from "@/lib/api";
 import { useTenantId, useTenant } from "@/lib/tenant";
 
 interface OAuthStatus {
@@ -50,6 +50,7 @@ export default function SettingsPage() {
   const [aiModels, setAiModels] = useState<AIModel[]>([]);
   const [playbooks, setPlaybooks] = useState<{ name: string; slug: string }[]>([]);
   const [applyingPlaybook, setApplyingPlaybook] = useState(false);
+  const [syncingModels, setSyncingModels] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -264,7 +265,31 @@ export default function SettingsPage() {
 
           {tier !== "starter" && (
             <Card className="p-6 space-y-4">
-              <h3 className="font-medium">Realtime Model</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium">Realtime Model</h3>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      setSyncingModels(true);
+                      try {
+                        await syncAIModels();
+                        const m = await getAIModels(tier);
+                        setAiModels(Array.isArray(m) ? m : []);
+                      } catch (err) {
+                        console.error("Sync models failed:", err);
+                      } finally {
+                        setSyncingModels(false);
+                      }
+                    }}
+                    disabled={syncingModels}
+                  >
+                    {syncingModels ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Sync Models
+                  </Button>
+                )}
+              </div>
               <Select
                 value={String(settings.selected_model || "gpt-realtime-mini")}
                 onValueChange={(v) => update("selected_model", v)}
