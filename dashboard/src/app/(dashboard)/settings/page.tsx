@@ -136,6 +136,9 @@ export default function SettingsPage() {
           <TabsTrigger value="hours">Business Hours</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="alerts">Alerts</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="general" className="space-y-4 mt-4">
@@ -625,6 +628,107 @@ export default function SettingsPage() {
             </Button>
           </div>
         </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="alerts" className="space-y-4 mt-4">
+            <Card className="p-6 space-y-4">
+              <h3 className="font-medium">Notification Channels</h3>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <Label>Alert Email</Label>
+                  <Input
+                    type="email"
+                    value={String(settings.alert_email || "")}
+                    onChange={(e) => update("alert_email", e.target.value)}
+                    placeholder="admin@example.com"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Receives alerts via your Outlook mailbox.
+                  </p>
+                </div>
+                <div>
+                  <Label>Slack Webhook URL</Label>
+                  <Input
+                    type="url"
+                    value={String(settings.alert_slack_webhook || "")}
+                    onChange={(e) => update("alert_slack_webhook", e.target.value)}
+                    placeholder="https://hooks.slack.com/services/..."
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Optional. Posts alerts to a Slack channel.
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6 space-y-4">
+              <h3 className="font-medium">Event Toggles</h3>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">New Lead</p>
+                  <p className="text-xs text-muted-foreground">Alert when a new caller is captured</p>
+                </div>
+                <Switch
+                  checked={Boolean(settings.alert_on_new_lead ?? true)}
+                  onCheckedChange={(v) => update("alert_on_new_lead", v)}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">New Booking</p>
+                  <p className="text-xs text-muted-foreground">Alert when an appointment is booked</p>
+                </div>
+                <Switch
+                  checked={Boolean(settings.alert_on_booking ?? true)}
+                  onCheckedChange={(v) => update("alert_on_booking", v)}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Voicemail</p>
+                  <p className="text-xs text-muted-foreground">Alert when a voicemail is left</p>
+                </div>
+                <Switch
+                  checked={Boolean(settings.alert_on_voicemail ?? true)}
+                  onCheckedChange={(v) => update("alert_on_voicemail", v)}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Usage Threshold</p>
+                  <p className="text-xs text-muted-foreground">Alert when monthly minutes exceed threshold</p>
+                </div>
+                <Switch
+                  checked={Boolean(settings.alert_on_usage_threshold ?? true)}
+                  onCheckedChange={(v) => update("alert_on_usage_threshold", v)}
+                />
+              </div>
+            </Card>
+
+            <Card className="p-6 space-y-4">
+              <h3 className="font-medium">Usage Threshold</h3>
+              <div>
+                <Label>Monthly Minute Limit</Label>
+                <Input
+                  type="number"
+                  value={Number(settings.alert_usage_threshold_minutes || 500)}
+                  onChange={(e) => update("alert_usage_threshold_minutes", parseInt(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Cumulative call minutes across all calls this month.
+                </p>
+              </div>
+            </Card>
+
+            <div className="flex justify-end gap-2">
+              {saved && <span className="text-sm text-green-600 self-center">Saved!</span>}
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Save Changes
+              </Button>
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

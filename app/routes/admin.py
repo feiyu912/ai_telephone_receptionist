@@ -79,6 +79,14 @@ class SettingsUpdate(BaseModel):
     hubspot_access_token: str | None = None
     call_recording_enabled: bool | None = None
     recording_disclosure_message: str | None = None
+    # Admin alerts
+    alert_email: str | None = None
+    alert_slack_webhook: str | None = None
+    alert_on_new_lead: bool | None = None
+    alert_on_booking: bool | None = None
+    alert_on_voicemail: bool | None = None
+    alert_on_usage_threshold: bool | None = None
+    alert_usage_threshold_minutes: int | None = None
 
 
 # Columns that must never leave the server as plaintext. GET replaces them

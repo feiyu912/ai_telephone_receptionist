@@ -23,6 +23,7 @@ from app.services.sms import send_sms, send_call_summary
 from app.services.hubspot import sync_call as hubspot_sync
 from app.services.email import send_voicemail_alert
 from app.services.email_confirm import request_email_confirmation
+from app.services.alerts import send_admin_alert, get_monthly_minutes, already_alerted_this_month
 from app.services.twilio_validation import verify_twilio_signature
 from app.prompts.system import build_system_prompt
 from app.config import get_settings
@@ -270,6 +271,7 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
     await queries.update_voice_session(db, call_sid, status="closed")
 
     tenant_id = str(session_data["tenant_id"])
+    tenant = await queries.get_tenant_by_id(db, tenant_id)
     phone = session_data["caller_phone"]
     history = session_data.get("conversation_history", [])
     if not history:
@@ -309,6 +311,24 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 key_facts=fact_dict,
             )
 
+            # Admin alert: new lead
+            if tenant and facts.name:
+                try:
+                    await send_admin_alert(
+                        tenant=tenant,
+                        event_type="new_lead",
+                        title=f"New Lead — {tenant.company_name or ''}",
+                        message=f"A new lead was captured from {phone}.",
+                        details={
+                            "Name": facts.name or "Unknown",
+                            "Email": facts.email or "N/A",
+                            "Phone": phone,
+                            "Intent": facts.intent or "N/A",
+                        },
+                    )
+                except Exception:
+                    logger.exception("New-lead alert failed for %s", call_sid)
+
             # Create conversation record
             await queries.create_conversation(
                 db, tenant_id,
@@ -322,7 +342,6 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
             )
 
             # Analyze follow-up actions (SMS + calendar)
-            tenant = await queries.get_tenant_by_id(db, str(tenant_id))
             sms_action = await llm.analyze_sms_action(masked_transcript)
 
             # HubSpot sync (with meeting data if calendar needed)
@@ -447,10 +466,9 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
         except Exception:
             logger.exception("Post-call processing failed for %s", call_sid)
 
-    # Voicemail email notification
+    # Voicemail email notification + admin alert
     if is_voicemail:
         try:
-            tenant = await queries.get_tenant_by_id(db, str(tenant_id))
             if tenant and tenant.voicemail_email:
                 await send_voicemail_alert(
                     to_email=tenant.voicemail_email,
@@ -459,8 +477,16 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     sender_email=tenant.sender_email,
                     tenant_id=tenant.tenant_id,
                 )
+            if tenant:
+                await send_admin_alert(
+                    tenant=tenant,
+                    event_type="voicemail",
+                    title=f"New Voicemail — {tenant.company_name or ''}",
+                    message=f"A voicemail was left by {phone}.",
+                    details={"Phone": phone, "Call SID": call_sid},
+                )
         except Exception:
-            logger.exception("Voicemail email failed for %s", call_sid)
+            logger.exception("Voicemail notification failed for %s", call_sid)
 
     # Log call completed
     await queries.log_analytics_event(
@@ -472,6 +498,28 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
             "turns": len(history),
         },
     )
+
+    # Usage threshold alert
+    if tenant and tenant.alert_on_usage_threshold:
+        try:
+            total_minutes = await get_monthly_minutes(db, tenant_id)
+            threshold = tenant.alert_usage_threshold_minutes or 500
+            if total_minutes > threshold:
+                if not await already_alerted_this_month(db, tenant_id):
+                    await send_admin_alert(
+                        tenant=tenant,
+                        event_type="usage_threshold",
+                        title=f"Usage Threshold Reached — {tenant.company_name or ''}",
+                        message=f"Monthly call usage has reached {int(total_minutes)} minutes (threshold: {threshold} min).",
+                        details={
+                            "Threshold": f"{threshold} min",
+                            "Current Usage": f"{int(total_minutes)} min",
+                            "Tenant": tenant.company_name or tenant.tenant_id,
+                        },
+                        db=db,
+                    )
+        except Exception:
+            logger.exception("Usage threshold check failed for %s", call_sid)
 
     return Response(status_code=200)
 

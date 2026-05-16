@@ -38,6 +38,14 @@ class TenantConfig(BaseModel):
     recording_disclosure_message: str = "This call may be recorded for quality assurance purposes."
     industry_playbook: str | None = None
     webhook_base_url: str | None = None
+    # Admin alerts
+    alert_email: str | None = None
+    alert_slack_webhook: str | None = None
+    alert_on_new_lead: bool = True
+    alert_on_booking: bool = True
+    alert_on_voicemail: bool = True
+    alert_on_usage_threshold: bool = True
+    alert_usage_threshold_minutes: int = 500
     is_active: bool = True
     # Per-tenant integration credentials (nullable; None → fall back to
     # the global env var). See scripts/migrate_multitenant_integrations.py.

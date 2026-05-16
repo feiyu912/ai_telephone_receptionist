@@ -16,6 +16,7 @@ from fastapi.websockets import WebSocketDisconnect
 from app.db.client import get_session_factory
 from app.db import queries
 from app.services.llm import VOICE_TOOLS
+from app.services.alerts import send_admin_alert
 from app.prompts.system import build_system_prompt
 from app.config import get_settings
 
@@ -384,6 +385,22 @@ async def media_stream(websocket: WebSocket, call_sid: str):
                         from app.prompts.system import _friendly_tz
                         tz_label = _friendly_tz(tenant.business_hours_timezone or "America/Chicago")
                         if result.get("success"):
+                            try:
+                                await send_admin_alert(
+                                    tenant=tenant,
+                                    event_type="booking",
+                                    title=f"New Booking — {tenant.company_name or ''}",
+                                    message=f"An appointment was booked for {result['date']} at {result['slot']} {tz_label}.",
+                                    details={
+                                        "Date": result['date'],
+                                        "Time": result['slot'],
+                                        "Timezone": tz_label,
+                                        "Caller": caller_phone,
+                                        "Purpose": args.get("purpose", "Consultation"),
+                                    },
+                                )
+                            except Exception:
+                                logger.exception("Booking alert failed for %s", call_sid)
                             return (
                                 f"Appointment booked for {result['date']} at {result['slot']} {tz_label}. "
                                 f"Confirm to the caller using exactly this date+time+timezone."
