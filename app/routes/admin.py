@@ -363,7 +363,11 @@ async def list_ai_models(
                    recommended, sort_order
             FROM ai_models
             WHERE category = :category AND enabled = true
-              AND (tier = :tier OR tier = 'starter')
+              AND (
+                  tier = :tier
+                  OR tier = 'starter'
+                  OR (:tier = 'pro' AND tier = 'growth')
+              )
             ORDER BY sort_order, display_name
         """),
         {"tier": tier, "category": category},
