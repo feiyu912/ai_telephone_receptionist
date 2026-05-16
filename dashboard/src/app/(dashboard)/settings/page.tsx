@@ -147,25 +147,25 @@ export default function SettingsPage() {
             <h3 className="font-medium">Company Information</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Company Name</Label>
+                <Label className="mb-1.5">Company Name</Label>
                 <Input
                   value={String(settings.company_name || "")}
                   onChange={(e) => update("company_name", e.target.value)}
                 />
               </div>
               <div>
-                <Label>Phone Number</Label>
+                <Label className="mb-1.5">Phone Number</Label>
                 <Input value={String(settings.phone_number || "")} disabled />
               </div>
               <div>
-                <Label>Slug</Label>
+                <Label className="mb-1.5">Slug</Label>
                 <Input
                   value={String(settings.slug || "")}
                   onChange={(e) => update("slug", e.target.value)}
                 />
               </div>
               <div>
-                <Label>Voicemail Email</Label>
+                <Label className="mb-1.5">Voicemail Email</Label>
                 <Input
                   value={String(settings.voicemail_email || "")}
                   onChange={(e) => update("voicemail_email", e.target.value)}
@@ -327,7 +327,7 @@ export default function SettingsPage() {
             </p>
             {Boolean(settings.call_recording_enabled) && (
               <div>
-                <Label>Disclosure Message</Label>
+                <Label className="mb-1.5">Disclosure Message</Label>
                 <Textarea
                   value={String(settings.recording_disclosure_message || "")}
                   onChange={(e) => update("recording_disclosure_message", e.target.value)}
@@ -341,7 +341,7 @@ export default function SettingsPage() {
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">Greetings</h3>
             <div>
-              <Label>New Caller Greeting</Label>
+              <Label className="mb-1.5">New Caller Greeting</Label>
               <Textarea
                 value={String(settings.greeting_new || "")}
                 onChange={(e) => update("greeting_new", e.target.value)}
@@ -349,7 +349,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label>Returning Caller Greeting</Label>
+              <Label className="mb-1.5">Returning Caller Greeting</Label>
               <Textarea
                 value={String(settings.greeting_returning || "")}
                 onChange={(e) => update("greeting_returning", e.target.value)}
@@ -397,7 +397,7 @@ export default function SettingsPage() {
             <h3 className="font-medium">Business Hours (informational)</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Start Hour</Label>
+                <Label className="mb-1.5">Start Hour</Label>
                 <Input
                   type="number"
                   value={Number(settings.business_hours_start || 9)}
@@ -406,7 +406,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>End Hour</Label>
+                <Label className="mb-1.5">End Hour</Label>
                 <Input
                   type="number"
                   value={Number(settings.business_hours_end || 17)}
@@ -415,7 +415,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Timezone</Label>
+                <Label className="mb-1.5">Timezone</Label>
                 <Input
                   value={String(settings.business_hours_timezone || "America/Chicago")}
                   onChange={(e) => update("business_hours_timezone", e.target.value)}
@@ -468,7 +468,7 @@ export default function SettingsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Sender email</Label>
+                <Label className="mb-1.5">Sender email</Label>
                 <Input
                   placeholder="voice@yourcompany.com"
                   value={String(settings.sender_email || "")}
@@ -476,7 +476,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Calendar email</Label>
+                <Label className="mb-1.5">Calendar email</Label>
                 <Input
                   placeholder="bookings@yourcompany.com"
                   value={String(settings.calendar_email || "")}
@@ -495,7 +495,7 @@ export default function SettingsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Account SID</Label>
+                <Label className="mb-1.5">Account SID</Label>
                 <Input
                   placeholder="AC…"
                   value={String(settings.twilio_account_sid || "")}
@@ -503,7 +503,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Auth token {settings.twilio_auth_token_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
+                <Label className="mb-1.5">Auth token {settings.twilio_auth_token_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
                 <Input
                   type="password"
                   placeholder={settings.twilio_auth_token_set ? "••••••••" : "paste token"}
@@ -512,7 +512,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>API Key SID</Label>
+                <Label className="mb-1.5">API Key SID</Label>
                 <Input
                   placeholder="SK…"
                   value={String(settings.twilio_api_key_sid || "")}
@@ -520,7 +520,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>API Key Secret {settings.twilio_api_key_secret_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
+                <Label className="mb-1.5">API Key Secret {settings.twilio_api_key_secret_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
                 <Input
                   type="password"
                   placeholder={settings.twilio_api_key_secret_set ? "••••••••" : "paste secret"}
@@ -529,7 +529,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="col-span-2">
-                <Label>TwiML App SID</Label>
+                <Label className="mb-1.5">TwiML App SID</Label>
                 <Input
                   placeholder="AP…"
                   value={String(settings.twilio_twiml_app_sid || "")}
@@ -547,7 +547,7 @@ export default function SettingsPage() {
               </p>
             </div>
             <div>
-              <Label>Access token {settings.hubspot_access_token_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
+              <Label className="mb-1.5">Access token {settings.hubspot_access_token_set ? <span className="text-xs text-muted-foreground">(saved — leave blank to keep)</span> : null}</Label>
               <Input
                 type="password"
                 placeholder={settings.hubspot_access_token_set ? "••••••••" : "paste token"}
@@ -570,14 +570,14 @@ export default function SettingsPage() {
           <Card className="p-6 space-y-4">
             <h3 className="font-medium">Transfer Settings</h3>
             <div>
-              <Label>Hunt Group Numbers (comma-separated)</Label>
+              <Label className="mb-1.5">Hunt Group Numbers (comma-separated)</Label>
               <Input
                 value={Array.isArray(settings.hunt_group_numbers) ? (settings.hunt_group_numbers as string[]).join(", ") : ""}
                 onChange={(e) => update("hunt_group_numbers", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
               />
             </div>
             <div>
-              <Label>Transfer Timeout (seconds)</Label>
+              <Label className="mb-1.5">Transfer Timeout (seconds)</Label>
               <Input
                 type="number"
                 value={Number(settings.transfer_timeout || 20)}
@@ -599,7 +599,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <Label>Memory Expiry (days)</Label>
+              <Label className="mb-1.5">Memory Expiry (days)</Label>
               <Input
                 type="number"
                 value={Number(settings.memory_expiry_days || 90)}
@@ -622,7 +622,7 @@ export default function SettingsPage() {
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>Duration (min)</Label>
+                <Label className="mb-1.5">Duration (min)</Label>
                 <Input
                   type="number"
                   value={Number(settings.booking_duration_minutes || 60)}
@@ -630,7 +630,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Buffer (min)</Label>
+                <Label className="mb-1.5">Buffer (min)</Label>
                 <Input
                   type="number"
                   value={Number(settings.booking_buffer_minutes || 15)}
@@ -638,7 +638,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Advance (days)</Label>
+                <Label className="mb-1.5">Advance (days)</Label>
                 <Input
                   type="number"
                   value={Number(settings.booking_advance_days || 30)}
@@ -663,7 +663,7 @@ export default function SettingsPage() {
               <h3 className="font-medium">Notification Channels</h3>
               <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <Label>Alert Email</Label>
+                  <Label className="mb-1.5">Alert Email</Label>
                   <Input
                     type="email"
                     value={String(settings.alert_email || "")}
@@ -675,7 +675,7 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <div>
-                  <Label>Slack Webhook URL</Label>
+                  <Label className="mb-1.5">Slack Webhook URL</Label>
                   <Input
                     type="url"
                     value={String(settings.alert_slack_webhook || "")}
@@ -736,7 +736,7 @@ export default function SettingsPage() {
             <Card className="p-6 space-y-4">
               <h3 className="font-medium">Usage Threshold</h3>
               <div>
-                <Label>Monthly Minute Limit</Label>
+                <Label className="mb-1.5">Monthly Minute Limit</Label>
                 <Input
                   type="number"
                   value={Number(settings.alert_usage_threshold_minutes || 500)}
