@@ -66,7 +66,7 @@
 - **Live transfer** — Growth/Pro calls hand off via Twilio REST API redirect to a hunt-group `<Dial>` TwiML; Starter calls return the TwiML inline
 - **End call hangup** — when AI calls `end_call`, the call automatically terminates after the farewell
 - **Call recording with compliance disclosure** — per-tenant toggle in Settings; when enabled, Twilio records the call and a customizable disclosure message is played before the greeting
-- **Voicemail transcription** — when a caller leaves a voicemail (no user turns detected), the recording is downloaded, transcribed via OpenAI Whisper, and delivered by email with both the recording link and full text transcript
+- **Voicemail transcription** — when a caller leaves a voicemail (no user turns detected), the recording is downloaded, transcribed via OpenAI Whisper, and delivered by email as an MP3 attachment with the full text transcript. Optional SMS alert to a configured admin phone number.
 - **Email captured during calls** — confirmation SMS sent post-call so caller can correct typos
 - **Booking info collection via SMS** — if a caller wants to book but doesn't provide name/email during the call, the system sends an SMS asking for the missing info, parses the reply, and automatically creates the Outlook Calendar event + HubSpot meeting
 - **Post-call processing** — GPT fact extraction → customer upsert → HubSpot sync → optional SMS/email follow-up
@@ -379,7 +379,7 @@ For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 - [x] Industry playbooks (HVAC, dental, legal, plumbing)
 - [x] Call recording with compliance disclosure
 - [x] Admin alerts (new lead, booking, voicemail, usage threshold)
-- [x] Voicemail transcription (OpenAI Whisper) + email delivery with recording link
+- [x] Voicemail transcription (OpenAI Whisper) + MP3 email attachment + SMS alert
 
 ## License
 
