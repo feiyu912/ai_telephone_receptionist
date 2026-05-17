@@ -66,6 +66,7 @@
 - **Live transfer** — Growth/Pro calls hand off via Twilio REST API redirect to a hunt-group `<Dial>` TwiML; Starter calls return the TwiML inline
 - **End call hangup** — when AI calls `end_call`, the call automatically terminates after the farewell
 - **Call recording with compliance disclosure** — per-tenant toggle in Settings; when enabled, Twilio records the call and a customizable disclosure message is played before the greeting
+- **Voicemail transcription** — when a caller leaves a voicemail (no user turns detected), the recording is downloaded, transcribed via OpenAI Whisper, and delivered by email with both the recording link and full text transcript
 - **Email captured during calls** — confirmation SMS sent post-call so caller can correct typos
 - **Booking info collection via SMS** — if a caller wants to book but doesn't provide name/email during the call, the system sends an SMS asking for the missing info, parses the reply, and automatically creates the Outlook Calendar event + HubSpot meeting
 - **Post-call processing** — GPT fact extraction → customer upsert → HubSpot sync → optional SMS/email follow-up
@@ -116,6 +117,7 @@ Roles are stored on each user row in the `dashboard_users` Supabase table
 │   ├── services/
 │   │   ├── llm.py                # GPT-5-mini chat + tools + fact extraction
 │   │   ├── realtime.py           # OpenAI Realtime helper
+│   │   ├── transcription.py      # OpenAI Whisper voicemail transcription
 │   │   ├── tts.py                # Cartesia SDK (fallback)
 │   │   ├── stt.py                # Cartesia SDK (fallback)
 │   │   ├── sms.py                # Twilio SMS sending
@@ -174,8 +176,10 @@ Roles are stored on each user row in the `dashboard_users` Supabase table
 │   ├── install.sh                # One-shot installer (Docker + UFW + SSL)
 │   └── DEPLOY.md                 # Step-by-step guide
 │
-├── scripts/                      # One-off scripts
-│   └── setup_aplus.py            # TenantB tenant provisioning
+├── scripts/                      # One-off scripts + migrations
+│   ├── setup_aplus.py            # TenantB tenant provisioning
+│   ├── migrate_admin_alerts.py   # Add alert columns to account_settings
+│   ├── migrate_tenant_360dmmc.py # Fix tenant_id split (old → new UUID)
 │
 ├── docs/                         # Project documentation
 │   ├── STATUS.md                 # Current build status (Python/FastAPI era)
@@ -187,7 +191,7 @@ Roles are stored on each user row in the `dashboard_users` Supabase table
 └── requirements.txt              # Python dependencies
 ```
 
-## Database Schema (Supabase, 18 tables + 11 views)
+## Database Schema (Supabase, 19 tables + 11 views)
 
 ### Tables actively used by this project (12)
 
@@ -365,7 +369,7 @@ For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 - [x] Hostinger VPS deployment (Docker, nginx, Let's Encrypt)
 - [x] Rebrand to **AI Telephone Receptionist**
 
-### Phase 2 — Planned
+### Phase 2 — Post-Launch Optimizations
 
 - [x] Production auth (cookie-based session login, role-based access)
 - [x] GitHub Actions auto-deploy on push to `main`
@@ -375,9 +379,8 @@ For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 - [x] Industry playbooks (HVAC, dental, legal, plumbing)
 - [x] Call recording with compliance disclosure
 - [x] Admin alerts (new lead, booking, voicemail, usage threshold)
+- [x] Voicemail transcription (OpenAI Whisper) + email delivery with recording link
 - [ ] Stripe billing + minute usage tracking
-- [ ] Admin alerts (new lead, booking, voicemail, usage threshold)
-- [ ] Industry playbooks (HVAC, dental, legal, plumbing)
 
 ## License
 

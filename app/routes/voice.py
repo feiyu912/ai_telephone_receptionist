@@ -235,6 +235,14 @@ async def voicemail(request: Request, db: AsyncSession = Depends(get_db)):
     if call_sid:
         session_data = await queries.get_voice_session(db, call_sid)
         if session_data:
+            # Persist recording_url so the status callback can transcribe it
+            metadata = session_data.get("session_metadata") or {}
+            if isinstance(metadata, str):
+                import json
+                metadata = json.loads(metadata)
+            metadata["recording_url"] = recording_url
+            await queries.update_voice_session(db, call_sid, session_metadata=metadata)
+
             await queries.log_analytics_event(
                 db, str(session_data["tenant_id"]), "voicemail_received", "voice",
                 session_id=call_sid,
@@ -469,21 +477,48 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Voicemail email notification + admin alert
     if is_voicemail:
         try:
+            # Fetch recording URL from session metadata
+            metadata = session_data.get("session_metadata") or {}
+            if isinstance(metadata, str):
+                import json
+                metadata = json.loads(metadata)
+            recording_url = metadata.get("recording_url")
+
+            # Transcribe voicemail audio
+            transcript = None
+            if recording_url and tenant:
+                try:
+                    from app.services.transcription import transcribe_recording
+                    transcript = await transcribe_recording(
+                        recording_url,
+                        account_sid=tenant.twilio_account_sid,
+                        auth_token=tenant.twilio_auth_token,
+                    )
+                except Exception:
+                    logger.exception("Voicemail transcription failed for %s", call_sid)
+
             if tenant and tenant.voicemail_email:
                 await send_voicemail_alert(
                     to_email=tenant.voicemail_email,
                     caller_phone=phone,
+                    recording_url=recording_url,
+                    transcript=transcript,
                     company_name=tenant.company_name or "",
                     sender_email=tenant.sender_email,
                     tenant_id=tenant.tenant_id,
                 )
             if tenant:
+                details: dict = {"Phone": phone, "Call SID": call_sid}
+                if recording_url:
+                    details["Recording"] = recording_url
+                if transcript:
+                    details["Transcript"] = transcript
                 await send_admin_alert(
                     tenant=tenant,
                     event_type="voicemail",
                     title=f"New Voicemail — {tenant.company_name or ''}",
                     message=f"A voicemail was left by {phone}.",
-                    details={"Phone": phone, "Call SID": call_sid},
+                    details=details,
                 )
         except Exception:
             logger.exception("Voicemail notification failed for %s", call_sid)
