@@ -686,6 +686,18 @@ export default function SettingsPage() {
                     Optional. Posts alerts to a Slack channel.
                   </p>
                 </div>
+                <div>
+                  <Label className="mb-1.5">Alert Phone (SMS)</Label>
+                  <Input
+                    type="tel"
+                    value={String(settings.alert_phone || "")}
+                    onChange={(e) => update("alert_phone", e.target.value)}
+                    placeholder="+1 234 567 8900"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Optional. Receives SMS alerts for voicemails.
+                  </p>
+                </div>
               </div>
             </Card>
 

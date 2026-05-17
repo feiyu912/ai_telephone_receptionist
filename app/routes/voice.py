@@ -508,6 +508,8 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     company_name=tenant.company_name or "",
                     sender_email=tenant.sender_email,
                     tenant_id=tenant.tenant_id,
+                    account_sid=tenant.twilio_account_sid,
+                    auth_token=tenant.twilio_auth_token,
                 )
             if tenant:
                 details: dict = {"Phone": phone, "Call SID": call_sid}

@@ -52,6 +52,28 @@ async def send_admin_alert(
     except Exception:
         logger.exception("Admin Slack alert failed for %s", event_type)
 
+    # SMS alert for voicemail (high-priority: missed opportunity)
+    if event_type == "voicemail" and tenant.alert_phone:
+        try:
+            from app.services.sms import send_sms
+            sms_body = f"{title}\n{message}"
+            if details:
+                for k, v in details.items():
+                    if len(sms_body) > 280:
+                        break
+                    sms_body += f"\n{k}: {v}"
+            if len(sms_body) > 320:
+                sms_body = sms_body[:317] + "..."
+            await send_sms(
+                to=tenant.alert_phone,
+                from_=tenant.phone_number,
+                body=sms_body,
+                account_sid=tenant.twilio_account_sid,
+                auth_token=tenant.twilio_auth_token,
+            )
+        except Exception:
+            logger.exception("Admin SMS alert failed for %s", event_type)
+
     # For usage threshold, record that we sent the alert so we don't spam
     if event_type == "usage_threshold" and db is not None:
         try:

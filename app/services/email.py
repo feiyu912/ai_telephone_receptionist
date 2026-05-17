@@ -24,12 +24,26 @@ async def _send_via_graph(
     subject: str,
     html_body: str,
     tenant_id: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> bool:
-    """Send an HTML email via Microsoft Graph as `sender`."""
+    """Send an HTML email via Microsoft Graph as `sender`.
+
+    `attachments` is a list of Microsoft Graph fileAttachment dicts:
+    {"@odata.type": "#microsoft.graph.fileAttachment",
+     "name": "...", "contentType": "...", "contentBytes": "base64..."}
+    """
     token = await _get_access_token(tenant_id)
     if not token:
         logger.info("Skipping email (Microsoft Graph not configured)")
         return False
+
+    message: dict = {
+        "subject": subject,
+        "body": {"contentType": "HTML", "content": html_body},
+        "toRecipients": [{"emailAddress": {"address": to_email}}],
+    }
+    if attachments:
+        message["attachments"] = attachments
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -39,11 +53,7 @@ async def _send_via_graph(
                 "Content-Type": "application/json",
             },
             json={
-                "message": {
-                    "subject": subject,
-                    "body": {"contentType": "HTML", "content": html_body},
-                    "toRecipients": [{"emailAddress": {"address": to_email}}],
-                },
+                "message": message,
                 "saveToSentItems": True,
             },
             timeout=15,
@@ -63,6 +73,8 @@ async def send_voicemail_alert(
     company_name: str = "",
     sender_email: str | None = None,
     tenant_id: str | None = None,
+    account_sid: str | None = None,
+    auth_token: str | None = None,
 ) -> bool:
     """Notify the team that a voicemail was left."""
     settings = get_settings()
@@ -76,15 +88,33 @@ async def send_voicemail_alert(
         "<h2>New Voicemail Received</h2>",
         f"<p><strong>Caller:</strong> {caller_phone}</p>",
     ]
-    if recording_url:
-        body_parts.append(
-            f'<p><strong>Recording:</strong> <a href="{recording_url}">Listen here</a></p>'
-        )
     if transcript:
         body_parts.append(f"<p><strong>Transcript:</strong> {transcript}</p>")
-    body_parts.append(f"<hr><p><em>POD6 AI Voice Agent — {company_name}</em></p>")
+    body_parts.append(f"<hr><p><em>AI Telephone Receptionist — {company_name}</em></p>")
 
-    return await _send_via_graph(sender, to_email, subject, "".join(body_parts), tenant_id)
+    # Download recording and attach it so the recipient can play it directly
+    attachments = None
+    if recording_url:
+        try:
+            from app.services.transcription import download_recording
+            audio_bytes = await download_recording(recording_url, account_sid, auth_token)
+            import base64
+            attachments = [
+                {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": "voicemail.mp3",
+                    "contentType": "audio/mpeg",
+                    "contentBytes": base64.b64encode(audio_bytes).decode("ascii"),
+                }
+            ]
+        except Exception:
+            logger.exception("Failed to attach voicemail recording to email")
+            # Fallback: include the link if attachment fails
+            body_parts.insert(-1, f'<p><strong>Recording:</strong> <a href="{recording_url}">Listen here</a></p>')
+
+    return await _send_via_graph(
+        sender, to_email, subject, "".join(body_parts), tenant_id, attachments
+    )
 
 
 async def send_followup_email(

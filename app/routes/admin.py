@@ -87,6 +87,7 @@ class SettingsUpdate(BaseModel):
     alert_on_voicemail: bool | None = None
     alert_on_usage_threshold: bool | None = None
     alert_usage_threshold_minutes: int | None = None
+    alert_phone: str | None = None
 
 
 # Columns that must never leave the server as plaintext. GET replaces them

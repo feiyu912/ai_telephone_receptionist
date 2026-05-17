@@ -46,6 +46,7 @@ class TenantConfig(BaseModel):
     alert_on_voicemail: bool = True
     alert_on_usage_threshold: bool = True
     alert_usage_threshold_minutes: int = 500
+    alert_phone: str | None = None
     is_active: bool = True
     # Per-tenant integration credentials (nullable; None → fall back to
     # the global env var). See scripts/migrate_multitenant_integrations.py.
