@@ -353,16 +353,18 @@ async def status_callback(request: Request, db: AsyncSession = Depends(get_db)):
             sms_action = await llm.analyze_sms_action(masked_transcript)
 
             # HubSpot sync (with meeting data if calendar needed)
-            meeting_data = None
-            if sms_action.get("needs_calendar") and sms_action.get("has_specific_time"):
-                meeting_data = sms_action
+            # Skip browser test callers (client:xxx) to avoid fake contacts
+            if not phone.startswith("client:"):
+                meeting_data = None
+                if sms_action.get("needs_calendar") and sms_action.get("has_specific_time"):
+                    meeting_data = sms_action
 
-            await hubspot_sync(
-                phone=phone, name=facts.name, email=facts.email,
-                summary=masked_transcript[:500], session_id=call_sid,
-                meeting_data=meeting_data,
-                access_token=tenant.hubspot_access_token if tenant else None,
-            )
+                await hubspot_sync(
+                    phone=phone, name=facts.name, email=facts.email,
+                    summary=masked_transcript[:500], session_id=call_sid,
+                    meeting_data=meeting_data,
+                    access_token=tenant.hubspot_access_token if tenant else None,
+                )
 
             # Booking info collection: if caller wants to book but missing name/email
             missing_fields = sms_action.get("missing_fields", [])

@@ -380,7 +380,6 @@ For first-time deployment, see [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 - [x] Call recording with compliance disclosure
 - [x] Admin alerts (new lead, booking, voicemail, usage threshold)
 - [x] Voicemail transcription (OpenAI Whisper) + email delivery with recording link
-- [ ] Stripe billing + minute usage tracking
 
 ## License
 

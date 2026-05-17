@@ -123,15 +123,16 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
         summary=f"Caller: {masked_body}\nAI: {mask_pii(response_text)}",
     )
 
-    # Analytics + HubSpot
+    # Analytics + HubSpot (skip browser test callers)
     await queries.log_analytics_event(
         db, tenant.tenant_id, "whatsapp_inbound", "whatsapp",
         phone=from_number, session_id=message_sid,
     )
-    await hubspot_sync(
-        phone=from_number, summary=f"WhatsApp: {masked_body}",
-        access_token=tenant.hubspot_access_token,
-    )
+    if not from_number.startswith("client:"):
+        await hubspot_sync(
+            phone=from_number, summary=f"WhatsApp: {masked_body}",
+            access_token=tenant.hubspot_access_token,
+        )
 
     return _twiml_reply(response_text)
 
